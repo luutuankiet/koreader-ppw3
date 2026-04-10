@@ -1,0 +1,13 @@
+services:
+  kindle-gateway:
+    build: .
+    container_name: kindle-gateway
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - PORT=9999
+      - PLUGINS_SRC=/workspace
+    volumes:
+      - /home/ken/dev/koreader-ppw3:/workspace:ro
+    labels:
+      - "traefik.enable=false"

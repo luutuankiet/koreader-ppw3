@@ -1,0 +1,17 @@
+node_modules/
+dist/
+*.tar.gz
+*.tar.xz
+koreader-src/
+kosettings_backup/rssreader_configuration.lua
+kosettings_backup/rssreader_local_defaults.lua
+*.koplugin/rssreader_configuration.lua
+*.koplugin/rssreader_local_defaults.lua
+/tmp/
+.DS_Store
+**/.git
+rssreader.koplugin/
+dev/rssreader.koplugin/
+kosettings_backup/plugins/askgpt.koplugin/
+gsd-lite/
+kosettings_backup/
