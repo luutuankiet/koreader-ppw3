@@ -117,12 +117,14 @@ Key implementation details:
 
 ## Project Structure
 
+Plugins live at workspace root as `<name>.koplugin/` directories. The kindle-gateway mounts the workspace root as `/workspace` (read-only) and reads plugins directly from there — no `dev/` subdir convention.
+
 ```
-├── dev/
-│   └── koreader_mcp.koplugin/   # MCP server plugin (Lua)
-│       ├── handlers.lua          # All tool handlers (L3 + base)
-│       ├── server.lua            # HTTP + JSON-RPC server
-│       └── main.lua              # KOReader plugin entry point
+├── koreader_mcp.koplugin/        # MCP server plugin (Lua)
+│   ├── handlers.lua             # All tool handlers (L3 + base)
+│   ├── server.lua               # HTTP + JSON-RPC server
+│   └── main.lua                 # KOReader plugin entry point
+├── rssreader.koplugin/           # FreshRSS reader plugin (own git repo — see remotes)
 ├── kindle-gateway/               # MCP relay gateway (Node.js/TypeScript)
 │   ├── src/
 │   │   ├── gateway-server.ts     # 13 tools + forwardWithScreenshot
@@ -130,22 +132,27 @@ Key implementation details:
 │   │   └── device-registry.ts    # In-memory device registry
 │   ├── Dockerfile                # node:22-slim + sharp
 │   └── docker-compose.yml        # network_mode: host, workspace volume
-├── rssreader.koplugin/           # FreshRSS reader plugin (Lua)
-├── scripts/                      # Deploy scripts
+├── scripts/                      # Deploy scripts (shell-side fallbacks for the MCP deploy_plugin tool)
 └── kosettings_backup/            # Device settings reference
 ```
 
 ## Quick Start
 
 ### Deploy plugin to Kindle
+
+**Plugin discovery:** the gateway treats any `<name>.koplugin/` directory at workspace root as deployable. Pass the bare name (no `.koplugin` suffix) as the `plugin` arg. To add a new plugin, drop the dir at workspace root and it's immediately deployable.
+
 ```bash
 # Via MCP tool (preferred — handles /tmp cleanup + restart + health poll):
 kindle-gateway__deploy_plugin(device: "kindle-1", plugin: "koreader_mcp")
+kindle-gateway__deploy_plugin(device: "kindle-1", plugin: "rssreader")
 
-# Manual:
-scp dev/koreader_mcp.koplugin/*.lua root@<kindle-ip>:/mnt/us/koreader/plugins/koreader_mcp.koplugin/
+# Manual fallback (matches what deploy_plugin does internally):
+scp koreader_mcp.koplugin/*.lua root@<kindle-ip>:/mnt/us/koreader/plugins/koreader_mcp.koplugin/
 ssh root@<kindle-ip> 'killall luajit && cd /mnt/us/koreader && ./koreader.sh &'
 ```
+
+**Known limitation:** the inline base64 transfer in `deploy_plugin` has an ARG_MAX cap on BusyBox shell (~48KB raw / ~64KB base64). Files above that silently truncate while still reporting success. For large files, fall back to a thinkpad-side `python3 -m http.server` + `wget` from kindle, or use the `scripts/deploy-rssreader.sh` tarball path.
 
 ### Rebuild gateway
 ```bash

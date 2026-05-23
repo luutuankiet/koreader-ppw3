@@ -13,7 +13,7 @@ set -e
 DEVICE=${1:-kindle}  # SSH alias or IP
 GATEWAY=${2:-}  # Optional: e.g. "192.168.1.5:9999"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLUGIN_DIR="${SCRIPT_DIR}/../dev/koreader_mcp.koplugin"
+PLUGIN_DIR="${SCRIPT_DIR}/../koreader_mcp.koplugin"
 KINDLE_PLUGIN_PATH="/mnt/us/koreader/plugins/koreader_mcp.koplugin"
 
 echo "=== KOReader MCP Plugin Deployment ==="

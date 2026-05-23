@@ -406,13 +406,14 @@ async function deployPlugin(
   if (device.status === 'offline') return errResult(`Device '${deviceName}' is offline`);
 
   const pluginDir = `${pluginName}.koplugin`;
-  const srcPath = path.join(PLUGINS_SRC, 'dev', pluginDir);
+  // Plugins live at workspace root (flat layout). Each `<name>.koplugin/` directly under PLUGINS_SRC.
+  const srcPath = path.join(PLUGINS_SRC, pluginDir);
   const destPath = `/mnt/us/koreader/plugins/${pluginDir}`;
 
   // Step 1: Check source exists
   if (!fs.existsSync(srcPath)) {
-    const available = fs.existsSync(path.join(PLUGINS_SRC, 'dev'))
-      ? fs.readdirSync(path.join(PLUGINS_SRC, 'dev')).filter(d => d.endsWith('.koplugin')).join(', ')
+    const available = fs.existsSync(PLUGINS_SRC)
+      ? fs.readdirSync(PLUGINS_SRC).filter(d => d.endsWith('.koplugin')).join(', ')
       : `PLUGINS_SRC not found: ${PLUGINS_SRC}`;
     return errResult(`Plugin source not found at ${srcPath}. Available: ${available}`);
   }

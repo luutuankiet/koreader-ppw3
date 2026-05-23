@@ -10,10 +10,7 @@ kosettings_backup/rssreader_local_defaults.lua
 /tmp/
 .DS_Store
 **/.git
-# rssreader.koplugin at root is a symlink → dev/rssreader.koplugin (see gsd-lite LOG-022).
-# No trailing slash: gitignore dir-only patterns (trailing /) do NOT match symlinks-to-directories.
-rssreader.koplugin
-dev/rssreader.koplugin/
+rssreader.koplugin/
 kosettings_backup/plugins/askgpt.koplugin/
 gsd-lite/
 kosettings_backup/
