@@ -10,6 +10,7 @@ local DataStorage = require("datastorage")
 local DocumentRegistry = require("document/documentregistry")
 local Event = require("ui/event")
 local InfoMessage = require("ui/widget/infomessage")
+local InputDialog = require("ui/widget/inputdialog")
 local LuaSettings = require("luasettings")
 local Menu = require("ui/widget/menu")
 local UIManager = require("ui/uimanager")
@@ -205,9 +206,10 @@ end
 -- has no close_callback, so a tap never closes it by itself: a missing book
 -- leaves the list open, and openRow closes it before opening a book.
 -- state: rows (from buildRows), status (subtitle tail), empty (text when the
--- server list is empty or could not be fetched).
+-- server list is empty or could not be fetched), query (the search, nil when
+-- none; it lives only as long as this list and is never saved).
 function SyncedHistory:redrawList(menu, state)
-    local view = ListView.view(state.rows, { show_missing = showMissing() })
+    local view = ListView.view(state.rows, { show_missing = showMissing(), query = state.query })
     local items = {}
     for i, row in ipairs(view.rows) do
         row.callback = function() self:openRow(menu, row) end
@@ -217,26 +219,76 @@ function SyncedHistory:redrawList(menu, state)
     if empty then
         items[1] = { text = empty, select_enabled = false, dim = true }
     end
+    -- itemnumber nil: switchItemTable goes back to page 1.
     menu:switchItemTable(nil, items, nil, nil, ListView.subtitle(view, { status = state.status, gettext = _ }))
 end
 
--- The title-bar menu: show or hide books not on this device.
-function SyncedHistory:showListMenu(menu, state)
+-- KOReader's on-screen keyboard dialog. Search sets the query and redraws;
+-- Cancel leaves the list as it was.
+function SyncedHistory:showSearch(menu, state)
     local dialog
-    dialog = ButtonDialog:new{
-        buttons = {
-            { {
-                -- The marks CheckButton draws for a checkbox.
-                text = (showMissing() and "✓ " or "□ ") .. _("Show books not on this device"),
-                align = "left",
+    dialog = InputDialog:new{
+        title = _("Search the synced reading list"),
+        input = state.query or "",
+        input_hint = _("Part of a book's name"),
+        buttons = { {
+            {
+                text = _("Cancel"),
+                id = "close",
+                callback = function() UIManager:close(dialog) end,
+            },
+            {
+                text = _("Search"),
+                is_enter_default = true,
                 callback = function()
+                    local query = ListView.cleanQuery(dialog:getInputText())
                     UIManager:close(dialog)
-                    toggleShowMissing()
+                    state.query = query
                     self:redrawList(menu, state)
                 end,
-            } },
-        },
+            },
+        } },
     }
+    UIManager:show(dialog)
+    dialog:onShowKeyboard()
+end
+
+-- The title-bar menu: show or hide books not on this device, search, and
+-- clear the search while one is active.
+function SyncedHistory:showListMenu(menu, state)
+    local dialog
+    local buttons = {
+        { {
+            -- The marks CheckButton draws for a checkbox.
+            text = (showMissing() and "✓ " or "□ ") .. _("Show books not on this device"),
+            align = "left",
+            callback = function()
+                UIManager:close(dialog)
+                toggleShowMissing()
+                self:redrawList(menu, state)
+            end,
+        } },
+        { {
+            text = _("Search…"),
+            align = "left",
+            callback = function()
+                UIManager:close(dialog)
+                self:showSearch(menu, state)
+            end,
+        } },
+    }
+    if state.query then
+        table.insert(buttons, { {
+            text = _("Clear search"),
+            align = "left",
+            callback = function()
+                UIManager:close(dialog)
+                state.query = nil
+                self:redrawList(menu, state)
+            end,
+        } })
+    end
+    dialog = ButtonDialog:new{ buttons = buttons }
     UIManager:show(dialog)
 end
 
