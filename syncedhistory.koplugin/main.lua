@@ -1,0 +1,231 @@
+--[[--
+Synced reading list: one reading list shared by every device logged into the
+same progress sync server. One menu entry opens the list: the cached copy at
+once, then the server's copy. Tapping a book on this device opens it and asks
+the built-in progress sync to pull its latest position.
+]]
+
+local DataStorage = require("datastorage")
+local DocumentRegistry = require("document/documentregistry")
+local Event = require("ui/event")
+local InfoMessage = require("ui/widget/infomessage")
+local LuaSettings = require("luasettings")
+local Menu = require("ui/widget/menu")
+local UIManager = require("ui/uimanager")
+local WidgetContainer = require("ui/widget/container/widgetcontainer")
+local json = require("json")
+local lfs = require("libs/libkoreader-lfs")
+local logger = require("logger")
+local md5 = require("ffi/sha2").md5
+local socket = require("socket")
+local filemanagerutil = require("apps/filemanager/filemanagerutil")
+local _ = require("gettext")
+local T = require("ffi/util").template
+
+local Client = require("syncedhistory_client")
+local Http = require("syncedhistory_http")
+local ListView = require("syncedhistory_listview")
+local LocalIndex = require("syncedhistory_localindex")
+
+-- KOReader builds a new plugin instance each time it switches between the
+-- file browser and a book, but loads this file once per run. Keeping the
+-- index here makes "rescan at most once per session" mean once per run.
+local index, client, settings
+-- Path of the book opened from the list, until its reader is ready.
+local pending_pull
+
+-- One settings object for the whole plugin: two LuaSettings opened on the
+-- same file would each flush their own copy and drop the other's keys.
+local function getSettings()
+    if not settings then
+        settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/syncedhistory.lua")
+    end
+    return settings
+end
+
+-- Same test as DocumentRegistry:hasProvider, minus its per-file sidecar
+-- lookup: a registered extension, or one the user associated with a
+-- document provider. Images are skipped: a book is never a picture, and
+-- cover images would only bloat the index.
+local function makeIsDocument()
+    local registered = DocumentRegistry.filetype_provider or {}
+    local images = DocumentRegistry.image_ext or {}
+    local associated = G_reader_settings:readSetting("provider") or {}
+    return function(name)
+        local suffix = LocalIndex.suffix(name)
+        if images[suffix] then return false end
+        return registered[suffix] == true or associated[suffix] ~= nil
+    end
+end
+
+local function getIndex()
+    if not index then
+        index = LocalIndex.new{
+            lfs = lfs,
+            md5 = md5,
+            settings = getSettings(),
+            root = G_reader_settings:readSetting("home_dir"),
+            is_document = makeIsDocument(),
+            clock = socket.gettime,
+        }
+    end
+    return index
+end
+
+-- The built-in progress sync settings. Its live table when it is loaded (it
+-- only is while a book is open, and it may hold a login not flushed yet),
+-- otherwise its settings file.
+local live_kosync
+local function readKosyncSettings()
+    if live_kosync and live_kosync.settings then return live_kosync.settings end
+    local file = DataStorage:getSettingsDir() .. "/kosync.lua"
+    if lfs.attributes(file, "mode") ~= "file" then return nil end
+    return LuaSettings:open(file):readSetting("settings")
+end
+
+local function getClient()
+    if not client then
+        client = Client.new{
+            kosync = readKosyncSettings,
+            request = Http.new{
+                scheduleIn = function(s, f) UIManager:scheduleIn(s, f) end,
+                log = logger,
+            },
+            md5 = md5,
+            json_decode = json.decode,
+            json_encode = json.encode,
+            settings = getSettings(),
+            log = logger,
+        }
+    end
+    return client
+end
+
+local SyncedHistory = WidgetContainer:extend{
+    name = "syncedhistory",
+    is_doc_only = false,
+}
+
+-- For later changes and for the on-device checks.
+SyncedHistory.getIndex = getIndex
+SyncedHistory.getClient = getClient
+
+function SyncedHistory:init()
+    self.ui.menu:registerToMainMenu(self)
+end
+
+-- Ask the built-in progress sync to pull this book's position, through its
+-- own "Pull progress from other devices" action. In KOReader v2026.07.1,
+-- KOSync:onKOSyncPullProgress calls getProgress(true, true): it turns the
+-- network on if needed and, being interactive, jumps to the server's
+-- position without a prompt, whatever the "sync to a newer/older state"
+-- settings say.
+function SyncedHistory:pullProgress()
+    if not self.ui.kosync then
+        UIManager:show(InfoMessage:new{
+            text = _("Progress sync is disabled, so the position was not pulled."),
+            timeout = 3,
+        })
+        return
+    end
+    logger.info("syncedhistory: pulling progress for", self.ui.document and self.ui.document.file)
+    self.ui:handleEvent(Event:new("KOSyncPullProgress"))
+end
+
+-- Every book open tells the server the book's file name, so other devices
+-- can show it in their list. A book opened from the list also pulls its
+-- position, after the reader has restored the local one.
+function SyncedHistory:onReaderReady()
+    live_kosync = self.ui.kosync
+    local file = self.ui.document and self.ui.document.file
+    if file then getClient():pushDocument(file) end
+    local pull = file ~= nil and file == pending_pull
+    pending_pull = nil
+    if pull then
+        UIManager:nextTick(function() self:pullProgress() end)
+    end
+end
+
+function SyncedHistory:onCloseDocument()
+    live_kosync = nil
+end
+
+function SyncedHistory:openRow(menu, row)
+    -- Look again: the file may have moved since the list was built.
+    local path = row.document and getIndex():lookup(row.document)
+    if not path then
+        logger.info("syncedhistory: not on this device:", row.document)
+        UIManager:show(InfoMessage:new{ text = _(ListView.NOT_FOUND), timeout = 3 })
+        return
+    end
+    UIManager:close(menu)
+    if self.ui.document and self.ui.document.file == path then
+        -- Already open: no new reader to wait for.
+        self:pullProgress()
+        return
+    end
+    logger.info("syncedhistory: opening", path)
+    pending_pull = path
+    filemanagerutil.openFile(self.ui, path)
+end
+
+-- Each row's tap goes through item.callback (Menu:onMenuChoice). The menu
+-- has no close_callback, so a tap never closes it by itself: a missing book
+-- leaves the list open, and openRow closes it before opening a book.
+local function itemsFor(list, empty_text, on_row)
+    local rows = ListView.rows(list, {
+        lookup = function(key) return getIndex():lookup(key) end,
+        gettext = _,
+    })
+    for _i, row in ipairs(rows) do
+        row.callback = function() on_row(row) end
+    end
+    if #rows == 0 then
+        rows[1] = { text = empty_text, select_enabled = false, dim = true }
+    end
+    return rows
+end
+
+--- The list screen: the cached copy at once, the server's copy when it comes.
+function SyncedHistory:showList()
+    local menu
+    local function onRow(row) self:openRow(menu, row) end
+    menu = Menu:new{
+        name = "syncedhistory_list",
+        title = _(ListView.TITLE),
+        subtitle = _(ListView.SYNCING),
+        item_table = itemsFor(getClient():cachedList(), _(ListView.SYNCING), onRow),
+        covers_fullscreen = true,
+        is_borderless = true,
+        is_popout = false,
+        title_bar_fm_style = true,
+        single_line = true,
+    }
+    UIManager:show(menu)
+    getClient():fetchList(function(list, info)
+        if not UIManager:isWidgetShown(menu) then return end
+        local subtitle, empty
+        if info.fresh then
+            subtitle = T(_("%1 books, synced just now"), #list)
+            empty = _(ListView.EMPTY)
+        else
+            subtitle = _(info.message)
+            empty = _(info.message)
+            if info.reason then
+                -- Not logged in, or the wrong matching method: say so plainly.
+                UIManager:show(InfoMessage:new{ text = _(info.message) })
+            end
+        end
+        menu:switchItemTable(nil, itemsFor(list, empty, onRow), nil, nil, subtitle)
+    end)
+end
+
+function SyncedHistory:addToMainMenu(menu_items)
+    menu_items.synced_reading_list = {
+        text = _(ListView.TITLE),
+        sorting_hint = "main",
+        callback = function() self:showList() end,
+    }
+end
+
+return SyncedHistory

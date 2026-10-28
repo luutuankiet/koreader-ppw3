@@ -1,0 +1,8 @@
+# Build context is the repo root; send only what the image copies (never the books).
+*
+!emulator/Dockerfile
+!emulator/supervisor.sh
+!emulator/koreader-shim.sh
+!emulator/seed/
+!koreader_mcp.koplugin/
+koreader_mcp.koplugin/config.lua

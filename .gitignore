@@ -16,3 +16,7 @@ kosettings_backup/
 
 .env
 !.env.example
+
+# Emulator: test books and persisted KOReader settings stay on the host only.
+emulator/library/
+emulator/state/
