@@ -23,3 +23,24 @@ services:
       - ./library:/mnt/us/documents
     labels:
       - "traefik.enable=false"
+
+  # Live view and control of the emulator's screen, no password, like koreader_mcp
+  # on 8889: VNC client at thinkpad:5973, browser at http://thinkpad:6073/.
+  # 5900 is taken on the host. No depends_on: starting this service never
+  # recreates koreader-emu; it waits for the display itself.
+  vnc:
+    build:
+      context: .
+      dockerfile: Dockerfile.vnc
+    image: koreader-emu-vnc
+    container_name: koreader-emu-vnc
+    restart: unless-stopped
+    init: true
+    # Host networking: reaches the emulator's X display through the shared abstract socket.
+    network_mode: host
+    environment:
+      DISPLAY: ":73"
+      VNC_PORT: "5973"
+      NOVNC_PORT: "6073"
+    labels:
+      - "traefik.enable=false"
