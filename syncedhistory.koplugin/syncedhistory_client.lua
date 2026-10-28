@@ -1,0 +1,244 @@
+--[[--
+Server client for the synced reading list.
+
+Talks to the progress sync server that KOReader's built-in progress sync
+(kosync.koplugin) is logged into, with that plugin's server, user name and
+user key. Two routes, both added to kosyncd for this plugin:
+
+    GET /syncs/list          every book of the user that has progress
+    PUT /syncs/documents     {document, filename}: remember a book's file name
+
+Every dependency is injected, so the module runs outside KOReader:
+
+    local Client = require("syncedhistory_client")
+    local client = Client.new{
+        kosync = function() return kosync_settings_table end,
+        request = function(req, callback) ... end, -- see syncedhistory_http.lua
+        md5 = require("ffi/sha2").md5,
+        json_decode = require("json").decode,
+        json_encode = require("json").encode,
+        settings = LuaSettings:open(path),     -- optional, holds the cache
+    }
+    client:fetchList(function(list, info) ... end)
+    client:pushDocument("/mnt/us/documents/Dune.epub")
+
+Never log or show the user key. Lua 5.1 only.
+]]
+
+local LocalIndex = require("syncedhistory_localindex")
+
+local Client = {}
+Client.__index = Client
+
+Client.TIMEOUT = 15 -- seconds; a cold start of the server takes about 11.5 s
+Client.CACHE_KEY = "server_list"
+-- kosync.koplugin/main.lua, CHECKSUM_METHOD.FILENAME
+Client.CHECKSUM_FILENAME = 1
+-- kosync.koplugin/KOSyncClient.lua, the GinClient middleware
+Client.ACCEPT = "application/vnd.koreader.v1+json"
+
+Client.MSG_LOGIN = "Synced reading list uses the built-in progress sync. Set its custom sync server and log in there first."
+Client.MSG_METHOD = "Progress sync must match documents by file name (Progress sync > Document matching method)."
+Client.MSG_CACHED = "Could not reach the sync server. Showing the cached list."
+Client.MSG_NO_CACHE = "Could not reach the sync server, and there is no cached list yet."
+
+local function noop() end
+
+--[[--
+Create a client.
+
+@tparam table opts
+  kosync       (required) function() -> the built-in sync settings table
+               (custom_server, username, userkey, checksum_method), or nil
+  request      (required) function(req, callback); req has method, url,
+               headers, body, timeout; callback(res) with res.status (number
+               or nil), res.body (string or nil), res.err (string or nil)
+  md5          (required) function(string) -> lowercase hex digest
+  json_decode  (required) function(string) -> value; may raise
+  json_encode  (required) function(value) -> string
+  settings     (optional) readSetting(k), saveSetting(k, v), flush()
+  log          (optional) table with info, warn, dbg (KOReader's logger)
+  clock        (optional) function() -> seconds since the epoch
+]]
+function Client.new(opts)
+    assert(opts and opts.kosync, "Client.new: kosync is required")
+    assert(opts.request, "Client.new: request is required")
+    assert(opts.md5, "Client.new: md5 is required")
+    assert(opts.json_decode and opts.json_encode, "Client.new: json_decode and json_encode are required")
+    local log = opts.log or {}
+    return setmetatable({
+        kosync = opts.kosync,
+        request = opts.request,
+        md5 = opts.md5,
+        json_decode = opts.json_decode,
+        json_encode = opts.json_encode,
+        settings = opts.settings,
+        log = { info = log.info or noop, warn = log.warn or noop, dbg = log.dbg or noop },
+        clock = opts.clock or os.time,
+    }, Client)
+end
+
+--- The sync key of a book: md5 of its file name without the folder, the same
+-- as LocalIndex:keyFor and the built-in sync's file-name method.
+function Client:keyFor(path_or_name)
+    return self.md5(LocalIndex.basename(path_or_name))
+end
+
+--[[--
+Server and credentials from the built-in sync settings.
+
+@treturn table|nil { server = base URL without trailing slash, username, userkey }
+@treturn string|nil the message to show when the client cannot be used
+@treturn string|nil "login" or "method"
+]]
+function Client:credentials()
+    local ok, s = pcall(self.kosync)
+    if not ok or type(s) ~= "table" then s = {} end
+    local server, user, key = s.custom_server, s.username, s.userkey
+    if type(server) ~= "string" or server:match("^%s*$") or server:match("^https?://$")
+        or type(user) ~= "string" or user == ""
+        or type(key) ~= "string" or key == "" then
+        return nil, Client.MSG_LOGIN, "login"
+    end
+    if s.checksum_method ~= Client.CHECKSUM_FILENAME then
+        return nil, Client.MSG_METHOD, "method"
+    end
+    server = server:gsub("^%s+", ""):gsub("[%s/]+$", "")
+    return { server = server, username = user, userkey = key }
+end
+
+-- Same headers as KOSyncClient: GinClient (accept) plus KOSyncAuth, plus
+-- the content type Spore's Format.JSON middleware sets on a body.
+local function headersFor(creds, with_body)
+    local h = {
+        ["accept"] = Client.ACCEPT,
+        ["x-auth-user"] = creds.username,
+        ["x-auth-key"] = creds.userkey,
+    }
+    if with_body then h["content-type"] = "application/json" end
+    return h
+end
+
+-- Keep only plain fields, so the cache never holds a JSON null sentinel
+-- that LuaSettings cannot write.
+local function cleanRow(row)
+    if type(row) ~= "table" or type(row.document) ~= "string" or row.document == "" then
+        return nil
+    end
+    local function str(v) return type(v) == "string" and v or nil end
+    local function num(v) return type(v) == "number" and v or nil end
+    return {
+        document = row.document,
+        percentage = num(row.percentage),
+        device = str(row.device),
+        device_id = str(row.device_id),
+        timestamp = num(row.timestamp),
+        filename = str(row.filename),
+    }
+end
+
+--- The cached list and when it was fetched (seconds since the epoch), or nil.
+function Client:cachedList()
+    if not self.settings then return nil end
+    local saved = self.settings:readSetting(Client.CACHE_KEY)
+    if type(saved) ~= "table" or type(saved.items) ~= "table" then return nil end
+    return saved.items, saved.fetched_at
+end
+
+function Client:saveList(items)
+    if not self.settings then return end
+    self.settings:saveSetting(Client.CACHE_KEY, { items = items, fetched_at = self.clock() })
+    self.settings:flush()
+end
+
+--[[--
+Fetch the user's list from the server, without blocking.
+
+Returns at once. `callback(list, info)` runs when the request ends:
+  - fresh:  list from the server, info = { fresh = true }
+  - failed: the cached list (or nil), info = { cached = true|false,
+            status = number|nil, err = string|nil, message = text to show }
+  - unusable settings: list = cached list or nil, info = { reason = "login" or
+            "method", message = text to show }; no request is made.
+]]
+function Client:fetchList(callback)
+    callback = callback or noop
+    local creds, message, reason = self:credentials()
+    if not creds then
+        self.log.warn("syncedhistory: list fetch skipped:", reason)
+        callback(self:cachedList(), { reason = reason, message = message })
+        return
+    end
+    local url = creds.server .. "/syncs/list"
+    self.log.dbg("syncedhistory: GET", url)
+    self.request({
+        method = "GET",
+        url = url,
+        headers = headersFor(creds, false),
+        timeout = Client.TIMEOUT,
+    }, function(res)
+        res = res or {}
+        local list
+        if res.status == 200 and type(res.body) == "string" then
+            local ok, decoded = pcall(self.json_decode, res.body)
+            if ok and type(decoded) == "table" then
+                list = {}
+                for _, row in ipairs(decoded) do
+                    local clean = cleanRow(row)
+                    if clean then list[#list + 1] = clean end
+                end
+            end
+        end
+        if list then
+            self:saveList(list)
+            self.log.info("syncedhistory: fetched", #list, "books")
+            callback(list, { fresh = true })
+            return
+        end
+        self.log.warn("syncedhistory: list fetch failed:", res.status, res.err)
+        local cached = self:cachedList()
+        callback(cached, {
+            cached = cached ~= nil,
+            status = res.status,
+            err = res.err,
+            message = cached and Client.MSG_CACHED or Client.MSG_NO_CACHE,
+        })
+    end)
+end
+
+--[[--
+Tell the server the file name of a book, fire and forget.
+
+Failures are only logged. Does nothing when the built-in sync settings are
+unusable. `done(ok)` is optional, for tests and checks.
+]]
+function Client:pushDocument(path, done)
+    done = done or noop
+    local filename = LocalIndex.basename(path)
+    if filename == "" then done(false); return end
+    local creds, _, reason = self:credentials()
+    if not creds then
+        self.log.dbg("syncedhistory: document push skipped:", reason)
+        done(false)
+        return
+    end
+    local document = self:keyFor(filename)
+    self.request({
+        method = "PUT",
+        url = creds.server .. "/syncs/documents",
+        headers = headersFor(creds, true),
+        body = self.json_encode({ document = document, filename = filename }),
+        timeout = Client.TIMEOUT,
+    }, function(res)
+        res = res or {}
+        if res.status == 200 then
+            self.log.dbg("syncedhistory: pushed file name for", document)
+            done(true)
+        else
+            self.log.warn("syncedhistory: document push failed:", res.status, res.err)
+            done(false)
+        end
+    end)
+end
+
+return Client
