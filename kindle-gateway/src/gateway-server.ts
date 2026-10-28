@@ -7,6 +7,7 @@ import { DeviceRegistry } from './device-registry';
 import { KindleClient } from './kindle-client';
 import { z } from 'zod';
 import sharp from 'sharp';
+import * as crypto from 'crypto';
 
 // --- Type helpers ---
 type ContentBlock =
@@ -439,14 +440,43 @@ async function deployPlugin(
   // Step 3: Ensure target dir exists
   await client.callTool('run_command', { command: `mkdir -p ${destPath}` }, 5000);
 
-  // Step 3: Transfer each .lua file via base64
+  // Step 4: Transfer each .lua file via native write_file (no ARG_MAX limit) with shell fallback for older koreader_mcp on device
   for (const file of luaFiles) {
     const content = fs.readFileSync(path.join(srcPath, file));
     const b64 = content.toString('base64');
+    const expectedMd5 = crypto.createHash('md5').update(content).digest('hex');
+    const destFile = `${destPath}/${file}`;
     console.log(`[deploy] Transferring ${file} (${content.length}B) to ${deviceName}`);
+
+    // Path 1: native write_file (preferred — bypasses BusyBox shell ARG_MAX ~64KB)
+    let nativeAttempted = false;
+    try {
+      const resp = await client.callTool('write_file', {
+        path: destFile,
+        content_base64: b64,
+      }, 30000);
+      const result = resp.result as { path: string; bytes_written: number; md5: string | null } | undefined;
+      if (!resp.error && result) {
+        nativeAttempted = true;
+        if (result.md5 && result.md5 !== expectedMd5) {
+          errors.push(`${file}: md5 mismatch (expected ${expectedMd5}, got ${result.md5})`);
+        } else {
+          console.log(`[deploy] ${file}: ${result.bytes_written}B via write_file, md5=${result.md5 || 'n/a'}`);
+          deployed.push(file);
+        }
+      } else if (resp.error) {
+        console.warn(`[deploy] write_file unsupported on ${deviceName} (${resp.error.message}) — falling back to shell`);
+      }
+    } catch (err) {
+      console.warn(`[deploy] write_file threw for ${file}: ${err instanceof Error ? err.message : String(err)} — falling back to shell`);
+    }
+
+    if (nativeAttempted) continue;
+
+    // Path 2: legacy shell printf (works for files < ~48KB raw; for backward compat with old koreader_mcp)
     try {
       const resp = await client.callTool('run_command', {
-        command: `printf '%s' '${b64}' | base64 -d > ${destPath}/${file} && echo ok`
+        command: `printf '%s' '${b64}' | base64 -d > ${destFile} && echo ok`
       }, 15000);
       const result = resp.result as { stdout: string; exit_code: number } | undefined;
       if (resp.error || (result && result.exit_code !== 0)) {

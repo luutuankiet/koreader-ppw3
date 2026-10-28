@@ -344,6 +344,81 @@ function handlers.capture_screenshot(params)
     }
 end
 
+--- write_file: atomically write a file from base64 content
+--- Bypasses shell ARG_MAX (run_command 'printf %s <b64>' truncates >64KB silently).
+--- Params: { path: string, content_base64: string }
+--- Returns: { path, bytes_written, md5 (busybox md5sum, may be nil if unavailable) }
+function handlers.write_file(params)
+    if not params or not params.path or not params.content_base64 then
+        return nil, {code = -32602, message = "Missing 'path' or 'content_base64' parameter"}
+    end
+
+    -- Decode base64: prefer LuaSocket's mime.unb64 (bundled with KOReader)
+    local decoded
+    local ok_mime, mime = pcall(require, "mime")
+    if ok_mime and mime and mime.unb64 then
+        local dec, _ = mime.unb64(params.content_base64)
+        decoded = dec
+    end
+    if not decoded then
+        -- Pure-Lua fallback decoder (well-known idiom; slower but works without LuaSocket)
+        local b = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+        local data = params.content_base64:gsub('[^'..b..'=]', '')
+        decoded = (data:gsub('.', function(x)
+            if x == '=' then return '' end
+            local r, f = '', (b:find(x) - 1)
+            for i = 6, 1, -1 do r = r..(f % 2^i - f % 2^(i-1) > 0 and '1' or '0') end
+            return r
+        end):gsub('%d%d%d?%d?%d?%d?%d?%d?', function(x)
+            if #x ~= 8 then return '' end
+            local c = 0
+            for i = 1, 8 do c = c + (x:sub(i,i) == '1' and 2^(8-i) or 0) end
+            return string.char(c)
+        end))
+    end
+    if not decoded then
+        return nil, {code = -32603, message = "Base64 decode failed"}
+    end
+
+    -- Ensure parent dir exists (best effort)
+    local parent = params.path:match("(.*/)")
+    if parent and parent ~= "" then
+        os.execute("mkdir -p '" .. parent:gsub("'", "'\\''") .. "'")
+    end
+
+    -- Atomic write: temp + rename (POSIX guarantee within same filesystem)
+    local tmp_path = params.path .. ".tmp." .. os.time() .. "." .. math.random(10000, 99999)
+    local f, err = io.open(tmp_path, "wb")
+    if not f then
+        return nil, {code = -32603, message = "Cannot open " .. tmp_path .. ": " .. tostring(err)}
+    end
+    local write_ok, write_err = pcall(function() f:write(decoded) end)
+    f:close()
+    if not write_ok then
+        os.remove(tmp_path)
+        return nil, {code = -32603, message = "Write failed: " .. tostring(write_err)}
+    end
+    local ren_ok, ren_err = os.rename(tmp_path, params.path)
+    if not ren_ok then
+        os.remove(tmp_path)
+        return nil, {code = -32603, message = "Rename failed: " .. tostring(ren_err)}
+    end
+
+    -- Compute md5 for caller-side verification (busybox md5sum is reliable on Kindle)
+    local md5 = nil
+    local md5_handle = io.popen("md5sum '" .. params.path:gsub("'", "'\\''") .. "' 2>/dev/null | awk '{print $1}'")
+    if md5_handle then
+        md5 = md5_handle:read("*l")
+        md5_handle:close()
+    end
+
+    return {
+        path = params.path,
+        bytes_written = #decoded,
+        md5 = md5,
+    }
+end
+
 function handlers.list_tools(params)
     return {
         {name = "read_files", description = "Read files from disk"},
@@ -357,6 +432,7 @@ function handlers.list_tools(params)
         {name = "close_top_widget", description = "L3: Close/dismiss the top widget"},
         {name = "send_event", description = "L3: Trigger a KOReader internal event (e.g. ShowMenu)"},
         {name = "capture_screenshot", description = "Capture e-ink framebuffer as base64 PNG"},
+        {name = "write_file", description = "Atomically write a file from base64 content (no shell ARG_MAX)"},
     }
 end
 
@@ -372,6 +448,7 @@ local dispatch_table = {
     close_top_widget = handlers.close_top_widget,
     send_event = handlers.send_event,
     capture_screenshot = handlers.capture_screenshot,
+    write_file = handlers.write_file,
 }
 
 function handlers.dispatch(method, params)

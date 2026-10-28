@@ -12,7 +12,6 @@ kosettings_backup/rssreader_local_defaults.lua
 **/.git
 rssreader.koplugin/
 kosettings_backup/plugins/askgpt.koplugin/
-gsd-lite/
 kosettings_backup/
 
 .env
