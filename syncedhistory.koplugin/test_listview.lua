@@ -286,6 +286,18 @@ if mode == "koreader" then
             "switchItemTable signature changed")
     end)
 
+    -- main.lua's title-bar menu: a left icon whose tap calls the menu's
+    -- onLeftButtonTap, and a ButtonDialog with a left-aligned button.
+    test("koreader: Menu takes a left title-bar icon and calls onLeftButtonTap", function()
+        local menu_src = readFile("frontend/ui/widget/menu.lua")
+        check(menu_src:find("left_icon = self.title_bar_left_icon,", 1, true), "title_bar_left_icon no longer used")
+        check(menu_src:find("left_icon_tap_callback = function() self:onLeftButtonTap() end", 1, true),
+            "left icon tap no longer calls onLeftButtonTap")
+        check(io.open("resources/icons/mdlight/appbar.menu.svg", "r"), "icon appbar.menu missing")
+        check(readFile("frontend/ui/widget/button.lua"):find('align = "center", -- or "left"', 1, true),
+            "Button align changed")
+    end)
+
     -- Read as source: requiring UIManager outside a running KOReader needs
     -- the device and the reader settings.
     test("koreader: UIManager, filemanagerutil and Event calls exist", function()
