@@ -1,0 +1,23 @@
+services:
+  koreader-emu:
+    build:
+      context: ..
+      dockerfile: emulator/Dockerfile
+    image: koreader-emu:2026.07.1
+    container_name: koreader-emu
+    restart: unless-stopped
+    init: true
+    # Host networking: koreader_mcp is reachable at thinkpad:8889 over the tailnet.
+    network_mode: host
+    environment:
+      MCP_PORT: "8889"
+      MCP_DEVICE_NAME: "emu"
+      # kindle-gateway runs on this host with host networking.
+      MCP_GATEWAY_URL: "http://127.0.0.1:9999"
+    volumes:
+      # Gitignored. KO_HOME: settings.reader.lua, settings/kosync.lua, history, cache.
+      - ./state/koreader-home:/mnt/us/koreader-home
+      # Gitignored test books.
+      - ./library:/mnt/us/documents
+    labels:
+      - "traefik.enable=false"
