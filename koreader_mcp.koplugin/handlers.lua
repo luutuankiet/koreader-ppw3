@@ -137,6 +137,8 @@ local function describeWidget(widget)
 end
 
 --- Helper: find the topmost Menu widget in the window stack
+-- Only list-style Menu widgets have switchItemTable; the main menu is a
+-- TouchMenu and is skipped (issue #14).
 local function findTopMenu()
     if not UIManager then return nil end
     for widget in UIManager:topdown_widgets_iter() do
