@@ -14,3 +14,6 @@ rssreader.koplugin/
 kosettings_backup/plugins/askgpt.koplugin/
 gsd-lite/
 kosettings_backup/
+
+.env
+!.env.example

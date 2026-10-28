@@ -1,0 +1,3 @@
+# Make the RSS reader fast by pre-baking content on a server, not by caching on the device
+
+Caching and prefetching on the Kindle (the first performance pass) hit a ceiling: every tap still took about 10 seconds on the weak CPU and network. The direction chosen is the pattern used by mainstream feed readers: a server builds the day's reading ahead of time, the device makes one compressed request on open, and browsing and reading do no blocking network calls. Measured goal: browse 50 headlines and read 5-10 full articles in under 5 minutes of interaction. Rejected: further on-device optimisation, which was already exhausted.

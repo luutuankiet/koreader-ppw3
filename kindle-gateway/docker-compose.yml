@@ -5,9 +5,10 @@ services:
     restart: unless-stopped
     network_mode: host
     environment:
-      - PORT=9999
+      - PORT=${GATEWAY_PORT:-9999}
       - PLUGINS_SRC=/workspace
+      - EINK_DELAY=${EINK_DELAY:-1500}
     volumes:
-      - /home/ken/dev/koreader-ppw3:/workspace:ro
+      - ${WORKSPACE_DIR:-..}:/workspace:ro
     labels:
       - "traefik.enable=false"

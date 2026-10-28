@@ -1,0 +1,3 @@
+# Plugins live at the workspace root, with the reader plugin as a separate repository
+
+An earlier layout kept plugin sources in a nested directory that the gateway read, with a second copy at the root for editing, so edits to the root copy never reached devices. Both plugins now sit at the root, the gateway reads them from there with no nested directory or symlink, and `rssreader.koplugin/` stays its own git repository (with the upstream project as a remote) ignored by this one. Rejected: symlinking one copy to the other, because the ignore rule then needs special handling and tools disagree about which path is real.
