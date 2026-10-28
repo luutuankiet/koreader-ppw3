@@ -1,0 +1,3 @@
+# Build context is emulator/; send only what the image copies (never the books or state).
+*
+!vnc.sh
