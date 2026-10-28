@@ -17,6 +17,7 @@ something is implemented.
 |---|---|---|
 | [Plugin deploy pipeline](architecture/deploy-pipeline.md) | how a plugin directory gets onto a Kindle, where the gateway reads plugin source, shell fallbacks | 2026-10-28 |
 | [Device bridge (agent to Kindle)](architecture/device-bridge.md) | how an agent call reaches a Kindle, which file owns the gateway tools, the on-device server, registration and screenshots | 2026-10-28 |
+| [Synced reading list plugin](architecture/synced-reading-list.md) | where the synced reading list fetches the server list, maps books to local files, builds rows, filters and searches, shows the long-press pop-up, and opens a book at its synced position | 2026-10-28 |
 
 ## Traps
 
