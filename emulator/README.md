@@ -43,4 +43,7 @@ docker exec koreader-emu sh -c 'xwd -root -silent -display "$DISPLAY" | convert 
   supervisor already relaunches.
 - Host networking: 8888 is taken on the thinkpad, hence 8889. Display `:73` because
   X's abstract socket is shared with the host's network namespace.
-- No noVNC view.
+- The `vnc` service shows the screen live and accepts input, with no password:
+  VNC client at `thinkpad:5973`, browser at `http://thinkpad:6073/` (5900 is taken
+  on the thinkpad). It waits for `:73` itself, so start it alone with
+  `docker compose up -d --build --no-deps vnc` without recreating the emulator.
