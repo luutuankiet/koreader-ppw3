@@ -172,10 +172,12 @@ if mode == "koreader" then
         check(body:find("NetworkMgr:willRerunWhenOnline", 1, true), "pull no longer turns the network on")
     end)
 
-    test("koreader: Menu takes onMenuChoice and a subtitle on refresh", function()
+    test("koreader: Menu routes a tap to item.callback and takes a subtitle", function()
         local menu_src = readFile("frontend/ui/widget/menu.lua")
         check(functionBody(menu_src, "Menu:onMenuSelect"):find("self:onMenuChoice%(item%)"),
             "onMenuSelect no longer goes through onMenuChoice")
+        check(functionBody(menu_src, "Menu:onMenuChoice"):find("item%.callback%(%)"),
+            "onMenuChoice no longer calls item.callback")
         check(menu_src:find("function Menu:switchItemTable%(new_title, new_item_table, itemnumber, itemmatch, new_subtitle%)"),
             "switchItemTable signature changed")
     end)

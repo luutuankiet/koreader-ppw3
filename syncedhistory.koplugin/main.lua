@@ -169,11 +169,17 @@ function SyncedHistory:openRow(menu, row)
     filemanagerutil.openFile(self.ui, path)
 end
 
-local function itemsFor(list, empty_text)
+-- Each row's tap goes through item.callback (Menu:onMenuChoice). The menu
+-- has no close_callback, so a tap never closes it by itself: a missing book
+-- leaves the list open, and openRow closes it before opening a book.
+local function itemsFor(list, empty_text, on_row)
     local rows = ListView.rows(list, {
         lookup = function(key) return getIndex():lookup(key) end,
         gettext = _,
     })
+    for _i, row in ipairs(rows) do
+        row.callback = function() on_row(row) end
+    end
     if #rows == 0 then
         rows[1] = { text = empty_text, select_enabled = false, dim = true }
     end
@@ -183,22 +189,17 @@ end
 --- The list screen: the cached copy at once, the server's copy when it comes.
 function SyncedHistory:showList()
     local menu
+    local function onRow(row) self:openRow(menu, row) end
     menu = Menu:new{
         name = "syncedhistory_list",
         title = _(ListView.TITLE),
         subtitle = _(ListView.SYNCING),
-        item_table = itemsFor(getClient():cachedList(), _(ListView.SYNCING)),
+        item_table = itemsFor(getClient():cachedList(), _(ListView.SYNCING), onRow),
         covers_fullscreen = true,
         is_borderless = true,
         is_popout = false,
         title_bar_fm_style = true,
         single_line = true,
-        -- Menu:onMenuSelect would close the list after any tap; a missing
-        -- book must leave it open, so openRow closes it itself.
-        onMenuChoice = function(_menu, row)
-            self:openRow(menu, row)
-            return true
-        end,
     }
     UIManager:show(menu)
     getClient():fetchList(function(list, info)
@@ -215,7 +216,7 @@ function SyncedHistory:showList()
                 UIManager:show(InfoMessage:new{ text = _(info.message) })
             end
         end
-        menu:switchItemTable(nil, itemsFor(list, empty), nil, nil, subtitle)
+        menu:switchItemTable(nil, itemsFor(list, empty, onRow), nil, nil, subtitle)
     end)
 end
 
