@@ -154,6 +154,95 @@ test("rows: input list is left untouched", function()
     eq(list[2].document, "b")
 end)
 
+-- Newest first: two books here, two elsewhere, interleaved.
+local function sampleRows()
+    return ListView.rows({
+        { document = "a", filename = "Head First Design Patterns.epub", timestamp = 4 },
+        { document = "b", filename = "Dune.epub", timestamp = 3 },
+        { document = "c", filename = "Design of Everyday Things.pdf", timestamp = 2 },
+        { document = "d", filename = "Emma (100%) [draft].epub", timestamp = 1 },
+    }, { lookup = lookupFrom({ a = "/l/a.epub", d = "/l/d.epub" }) })
+end
+local function docs(view)
+    local out = {}
+    for i, row in ipairs(view.rows) do out[i] = row.document end
+    return table.concat(out, ",")
+end
+
+test("view: filter on keeps only books on this device, in order", function()
+    local v = ListView.view(sampleRows(), { show_missing = false })
+    eq(docs(v), "a,d")
+    eq(v.total, 4)
+    eq(v.on_device, 2)
+    eq(v.matched, 2)
+    eq(v.query, nil)
+    eq(docs(ListView.view(sampleRows())), "a,d", "filter is on by default")
+end)
+
+test("view: filter off shows every row, in order", function()
+    local v = ListView.view(sampleRows(), { show_missing = true })
+    eq(docs(v), "a,b,c,d")
+    eq(v.on_device, 2)
+    eq(v.matched, 4)
+end)
+
+test("view: search within the filter, any case", function()
+    local v = ListView.view(sampleRows(), { show_missing = false, query = "DESIGN" })
+    eq(docs(v), "a", "c matches but is not on this device")
+    eq(v.matched, 1)
+    eq(v.query, "DESIGN")
+    eq(docs(ListView.view(sampleRows(), { show_missing = true, query = "design" })), "a,c")
+end)
+
+test("view: search is plain text, not a Lua pattern", function()
+    local rows = sampleRows()
+    eq(docs(ListView.view(rows, { query = "(100%)" })), "d")
+    eq(docs(ListView.view(rows, { query = "[draft]" })), "d")
+    eq(docs(ListView.view(rows, { query = "%" })), "d")
+    eq(docs(ListView.view(rows, { show_missing = true, query = "." })), "a,b,c,d", "dot matches only dots")
+    eq(docs(ListView.view(rows, { show_missing = true, query = "e.p" })), "", "dot is not a wildcard")
+end)
+
+test("view: blank search is no search", function()
+    local v = ListView.view(sampleRows(), { show_missing = true, query = "   " })
+    eq(v.query, nil)
+    eq(v.matched, 4)
+    eq(ListView.view(sampleRows(), { query = "  dune " }).query, "dune", "trimmed")
+end)
+
+test("subtitle: each form", function()
+    local rows = sampleRows()
+    eq(ListView.subtitle(ListView.view(rows, { show_missing = false })), "2 of 4 on this device · synced just now")
+    eq(ListView.subtitle(ListView.view(rows, { show_missing = true })), "4 books · synced just now")
+    eq(ListView.subtitle(ListView.view(rows, { show_missing = true, query = "design" })), "\"design\": 2 found · synced just now")
+    eq(ListView.subtitle(ListView.view(rows, { query = "%1 (x)" })), "\"%1 (x)\": 0 found · synced just now",
+        "search text is not a template")
+    eq(ListView.subtitle(ListView.view(rows, {}), { status = "Offline: showing the last list." }),
+        "2 of 4 on this device · Offline: showing the last list.")
+end)
+
+test("subtitle and empty text: translated through gettext", function()
+    local g = function(s) return "<" .. s .. ">" end
+    local v = ListView.view(sampleRows(), {})
+    eq(ListView.subtitle(v, { gettext = g }), "<2 of 4 on this device> · <synced just now>")
+    eq(ListView.emptyText(ListView.view({}, {}), { gettext = g }), "<No books on the sync server yet.>")
+end)
+
+test("emptyText: the three empty cases, and nil when rows show", function()
+    eq(ListView.emptyText(ListView.view(sampleRows(), {})), nil)
+    eq(ListView.emptyText(ListView.view({}, {})), "No books on the sync server yet.")
+    eq(ListView.emptyText(ListView.view({}, {}), { empty = "Offline." }), "Offline.")
+    local elsewhere = ListView.rows({ { document = "x", filename = "X.epub", timestamp = 1 } },
+        { lookup = lookupFrom({}) })
+    eq(ListView.emptyText(ListView.view(elsewhere, { show_missing = false })),
+        "None of your synced books are on this device. Show all from the title-bar menu.")
+    eq(ListView.emptyText(ListView.view(elsewhere, { show_missing = false, query = "x" })),
+        "None of your synced books are on this device. Show all from the title-bar menu.",
+        "nothing for the search to find")
+    eq(ListView.emptyText(ListView.view(sampleRows(), { query = "zzz" })), "No book matches \"zzz\".")
+    eq(ListView.emptyText(ListView.view(sampleRows(), { query = "50%" })), "No book matches \"50%\".")
+end)
+
 if mode == "koreader" then
     local function readFile(path)
         local f = assert(io.open(path, "r"), "cannot open " .. path)
