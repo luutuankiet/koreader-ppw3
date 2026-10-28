@@ -10,12 +10,14 @@ device. No KOReader dependency, so it runs outside KOReader:
         lookup = function(key) return index:lookup(key) end, -- path or nil
         gettext = _,                                          -- optional
     })
-    -- rows[i] = { text, mandatory, dim, document, filename, path, missing }
+    -- rows[i] = { text, mandatory, dim, document, filename, path, missing,
+    --             percentage, device, timestamp }
 
     local v = ListView.view(rows, { show_missing = false, query = "dune" })
     -- v.rows to show, v.total, v.on_device, v.matched, v.query
     ListView.subtitle(v, { status = "synced just now", gettext = _ })
     ListView.emptyText(v, { empty = "No books on the sync server yet.", gettext = _ })
+    ListView.details(rows[1], { gettext = _, date = os.date }) -- long-press text
 
 Lua 5.1 only.
 ]]
@@ -36,6 +38,13 @@ ListView.NO_MATCH = "No book matches \"%1\"."
 ListView.COUNT_HERE = "%1 of %2 on this device"
 ListView.COUNT_ALL = "%1 books"
 ListView.COUNT_FOUND = "\"%1\": %2 found"
+ListView.DETAIL_PROGRESS = "Progress: %1"
+ListView.DETAIL_DEVICE = "Last device: %1"
+ListView.DETAIL_PUSHED = "Last pushed: %1"
+ListView.DETAIL_FOLDER = "Folder: %1"
+ListView.NOT_HERE = "not on this device"
+ListView.UNKNOWN_TIME = "unknown"
+ListView.DATE_FORMAT = "%Y-%m-%d %H:%M"
 
 local function identity(s) return s end
 
@@ -111,6 +120,9 @@ function ListView.rows(list, opts)
                 percentage = row.percentage,
                 path = path,
                 missing = path == nil,
+                -- As the server sent them, for the long-press details.
+                device = type(row.device) == "string" and row.device ~= "" and row.device or nil,
+                timestamp = type(row.timestamp) == "number" and row.timestamp or nil,
             }
         end
     end
@@ -189,6 +201,34 @@ function ListView.emptyText(view, opts)
     -- The filter hid everything: there was nothing for a search to find.
     if not view.show_missing and view.on_device == 0 then return _(ListView.NONE_HERE) end
     return template(_(ListView.NO_MATCH), view.query)
+end
+
+--[[--
+The long-press pop-up's text for one row: the whole name, then one line each
+for the percentage, the last device, when it was last pushed and the folder on
+this device.
+
+@tparam table row from ListView.rows
+@tparam table opts
+  gettext  translation function, default identity
+  date     function(format, seconds) -> string, default os.date
+@treturn string
+]]
+function ListView.details(row, opts)
+    opts = opts or {}
+    local _ = opts.gettext or identity
+    local date = opts.date or os.date
+    local pushed = row.timestamp and date(ListView.DATE_FORMAT, row.timestamp) or _(ListView.UNKNOWN_TIME)
+    local folder = row.path and (row.path:match("^(.*)/[^/]*$") or row.path) or _(ListView.NOT_HERE)
+    if folder == "" then folder = "/" end
+    return table.concat({
+        tostring(row.text),
+        "",
+        template(_(ListView.DETAIL_PROGRESS), ListView.percent(row.percentage)),
+        template(_(ListView.DETAIL_DEVICE), row.device or _(ListView.UNKNOWN_DEVICE)),
+        template(_(ListView.DETAIL_PUSHED), pushed),
+        template(_(ListView.DETAIL_FOLDER), folder),
+    }, "\n")
 end
 
 return ListView
