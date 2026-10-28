@@ -8,6 +8,7 @@ import { KindleClient } from './kindle-client';
 import { z } from 'zod';
 import sharp from 'sharp';
 import * as crypto from 'crypto';
+import { buildRestartCommand, resolvePluginSource } from './device-commands';
 
 // --- Type helpers ---
 type ContentBlock =
@@ -156,18 +157,19 @@ export function createApp(registry: DeviceRegistry) {
     // === Device management ===
 
     defineTool(server, 'restart_koreader',
-      'Restart KOReader on a Kindle device. Kills luajit, restarts koreader.sh, waits for health check.',
+      'Restart KOReader on a Kindle device. Kills the process on the device\'s koreader_mcp port and luajit, restarts koreader.sh, waits for health check.',
       { device: z.string().describe('Device name') },
       async (args) => await restartKoreader(registry, args.device!)
     );
 
     defineTool(server, 'deploy_plugin',
-      'Deploy a KOReader plugin to a Kindle. Reads source from workspace, transfers via base64, restarts KOReader.',
+      'Deploy a KOReader plugin to a Kindle. Reads the top-level .lua files from the workspace (or an optional workspace-relative source folder), transfers them, restarts KOReader.',
       {
         device: z.string().describe('Device name'),
-        plugin: z.string().describe('Plugin dir name without .koplugin (e.g. "koreader_mcp")'),
+        plugin: z.string().describe('Plugin dir name without .koplugin (e.g. "koreader_mcp"); also names the device folder /mnt/us/koreader/plugins/<plugin>.koplugin'),
+        source: z.string().optional().describe('Optional source folder relative to the workspace root (e.g. ".claude/worktrees/foo/koreader_mcp.koplugin"). Default: "<plugin>.koplugin" at the workspace root.'),
       },
-      async (args) => await deployPlugin(registry, args.device!, args.plugin!)
+      async (args) => await deployPlugin(registry, args.device!, args.plugin!, args.source)
     );
 
     return server;
@@ -341,10 +343,11 @@ async function captureScreenshotTool(
   }
 }
 
-/** Restart KOReader on a Kindle device */
-async function restartKoreader(
+/** Restart KOReader on a Kindle device (or the emulator). Exported for tests. */
+export async function restartKoreader(
   registry: DeviceRegistry,
-  deviceName: string
+  deviceName: string,
+  pollIntervalMs: number = 5000
 ): Promise<ToolResult> {
   const device = registry.get(deviceName);
   if (!device) return errResult(`Device '${deviceName}' not found`);
@@ -352,7 +355,7 @@ async function restartKoreader(
   const client = new KindleClient(device);
   console.log(`[restart] Scheduling KOReader restart on ${deviceName}`);
 
-  // Pre-restart: kill zombie processes holding port 8888 + cleanup /tmp
+  // Pre-restart: cleanup /tmp
   try {
     await client.callTool('run_command', {
       command: 'rm -f /tmp/koreader-fb.dump /tmp/fm-out-* /tmp/mcp_ss.png /tmp/*.dump /tmp/ko_restart.log; echo cleaned'
@@ -361,9 +364,8 @@ async function restartKoreader(
 
   // Schedule restart with delay (so MCP can respond before dying)
   try {
-    await client.callTool('run_command', {
-      command: 'nohup sh -c "sleep 2; PID=$(netstat -tlnp 2>&1 | awk \"/:8888/{print \\\$NF}\" | cut -d/ -f1); [ -n \"$PID\" ] && kill -9 $PID; killall luajit; sleep 5; cd /mnt/us/koreader && ./koreader.sh" > /tmp/ko_restart.log 2>&1 &'
-    }, 5000);
+    // Kills whatever holds the device's own koreader_mcp port, then any luajit left over.
+    await client.callTool('run_command', { command: buildRestartCommand(device.port) }, 5000);
   } catch {
     // May timeout if restart is fast
   }
@@ -375,7 +377,7 @@ async function restartKoreader(
   console.log(`[restart] Waiting for ${deviceName} to come back...`);
   let healthy = false;
   for (let attempt = 0; attempt < 10; attempt++) {
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
     try {
       const resp = await client.callTool('device_status', {}, 5000);
       if (!resp.error) {
@@ -400,15 +402,18 @@ async function restartKoreader(
 async function deployPlugin(
   registry: DeviceRegistry,
   deviceName: string,
-  pluginName: string
+  pluginName: string,
+  source?: string
 ): Promise<ToolResult> {
   const device = registry.get(deviceName);
   if (!device) return errResult(`Device '${deviceName}' not found`);
   if (device.status === 'offline') return errResult(`Device '${deviceName}' is offline`);
 
   const pluginDir = `${pluginName}.koplugin`;
-  // Plugins live at workspace root (flat layout). Each `<name>.koplugin/` directly under PLUGINS_SRC.
-  const srcPath = path.join(PLUGINS_SRC, pluginDir);
+  // Plugins live at workspace root (flat layout), or at an explicit workspace-relative `source`.
+  const resolved = resolvePluginSource(PLUGINS_SRC, pluginName, source);
+  if (!resolved.ok) return errResult(resolved.error);
+  const srcPath = resolved.srcPath;
   const destPath = `/mnt/us/koreader/plugins/${pluginDir}`;
 
   // Step 1: Check source exists
@@ -503,6 +508,7 @@ async function deployPlugin(
       text: JSON.stringify({
         device: deviceName,
         plugin: pluginDir,
+        source: path.relative(path.resolve(PLUGINS_SRC), srcPath),
         deployed_files: deployed,
         errors: errors.length > 0 ? errors : undefined,
         koreader_restarted: restartData.restarted,

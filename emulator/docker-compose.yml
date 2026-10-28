@@ -14,6 +14,8 @@ services:
       MCP_DEVICE_NAME: "emu"
       # kindle-gateway runs on this host with host networking.
       MCP_GATEWAY_URL: "http://127.0.0.1:9999"
+      # Registered address: the host's tailnet name, not the LAN IP koreader_mcp discovers.
+      MCP_ADVERTISE_HOST: "thinkpad"
     volumes:
       # Gitignored. KO_HOME: settings.reader.lua, settings/kosync.lua, history, cache.
       - ./state/koreader-home:/mnt/us/koreader-home

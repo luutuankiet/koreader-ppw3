@@ -34,9 +34,13 @@ docker exec koreader-emu sh -c 'xwd -root -silent -display "$DISPLAY" | convert 
 - `supervisor.sh` is the entrypoint: starts Xvfb on `:73`, then relaunches
   `./luajit ./reader.lua` 2 s after every exit. It rewrites
   `koreader_mcp.koplugin/config.lua` before each launch from `MCP_PORT` (8889),
-  `MCP_DEVICE_NAME` (`emu`) and `MCP_GATEWAY_URL` (set in `docker-compose.yml`).
+  `MCP_DEVICE_NAME` (`emu`), `MCP_GATEWAY_URL` and `MCP_ADVERTISE_HOST` (set in
+  `docker-compose.yml`). `MCP_ADVERTISE_HOST=thinkpad` makes it register as
+  `thinkpad:8889` instead of the LAN IP koreader_mcp discovers.
+- No `fbgrab` here: `capture_screenshot` falls back to KOReader's own `Screen:shot`.
 - `/mnt/us/koreader/koreader.sh` is a no-op shim: the gateway restart runs
-  `killall luajit; ./koreader.sh`, and the supervisor already relaunches.
+  kills the process on the device's port, then `killall luajit; ./koreader.sh`, and the
+  supervisor already relaunches.
 - Host networking: 8888 is taken on the thinkpad, hence 8889. Display `:73` because
   X's abstract socket is shared with the host's network namespace.
 - No noVNC view.

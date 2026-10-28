@@ -56,6 +56,8 @@ write_mcp_config() {
         echo "    port = ${MCP_PORT:-8889},"
         echo "    device_name = \"${MCP_DEVICE_NAME:-emu}\","
         [ -n "${MCP_GATEWAY_URL:-}" ] && echo "    gateway_url = \"${MCP_GATEWAY_URL}\","
+        # The address the gateway is told to call back; unset = koreader_mcp's discovered IP.
+        [ -n "${MCP_ADVERTISE_HOST:-}" ] && echo "    advertise_host = \"${MCP_ADVERTISE_HOST}\","
         echo "}"
     } > "$MCP_DIR/config.lua"
 }
