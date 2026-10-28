@@ -5,6 +5,7 @@ once, then the server's copy. Tapping a book on this device opens it and asks
 the built-in progress sync to pull its latest position.
 ]]
 
+local ButtonDialog = require("ui/widget/buttondialog")
 local DataStorage = require("datastorage")
 local DocumentRegistry = require("document/documentregistry")
 local Event = require("ui/event")
@@ -20,7 +21,6 @@ local md5 = require("ffi/sha2").md5
 local socket = require("socket")
 local filemanagerutil = require("apps/filemanager/filemanagerutil")
 local _ = require("gettext")
-local T = require("ffi/util").template
 
 local Client = require("syncedhistory_client")
 local Http = require("syncedhistory_http")
@@ -183,54 +183,100 @@ function SyncedHistory:openRow(menu, row)
     openBook(self.ui, path)
 end
 
--- Each row's tap goes through item.callback (Menu:onMenuChoice). The menu
--- has no close_callback, so a tap never closes it by itself: a missing book
--- leaves the list open, and openRow closes it before opening a book.
-local function itemsFor(list, empty_text, on_row)
-    local rows = ListView.rows(list, {
+-- Books not on this device are hidden until the reader asks for them; the
+-- choice is kept per device.
+local function showMissing()
+    return getSettings():isTrue("show_missing")
+end
+
+local function toggleShowMissing()
+    getSettings():saveSetting("show_missing", not showMissing())
+    getSettings():flush()
+end
+
+local function buildRows(list)
+    return ListView.rows(list, {
         lookup = function(key) return getIndex():lookup(key) end,
         gettext = _,
     })
-    for _i, row in ipairs(rows) do
-        row.callback = function() on_row(row) end
+end
+
+-- Each row's tap goes through item.callback (Menu:onMenuChoice). The menu
+-- has no close_callback, so a tap never closes it by itself: a missing book
+-- leaves the list open, and openRow closes it before opening a book.
+-- state: rows (from buildRows), status (subtitle tail), empty (text when the
+-- server list is empty or could not be fetched).
+function SyncedHistory:redrawList(menu, state)
+    local view = ListView.view(state.rows, { show_missing = showMissing() })
+    local items = {}
+    for i, row in ipairs(view.rows) do
+        row.callback = function() self:openRow(menu, row) end
+        items[i] = row
     end
-    if #rows == 0 then
-        rows[1] = { text = empty_text, select_enabled = false, dim = true }
+    local empty = ListView.emptyText(view, { empty = state.empty, gettext = _ })
+    if empty then
+        items[1] = { text = empty, select_enabled = false, dim = true }
     end
-    return rows
+    menu:switchItemTable(nil, items, nil, nil, ListView.subtitle(view, { status = state.status, gettext = _ }))
+end
+
+-- The title-bar menu: show or hide books not on this device.
+function SyncedHistory:showListMenu(menu, state)
+    local dialog
+    dialog = ButtonDialog:new{
+        buttons = {
+            { {
+                -- The marks CheckButton draws for a checkbox.
+                text = (showMissing() and "✓ " or "□ ") .. _("Show books not on this device"),
+                align = "left",
+                callback = function()
+                    UIManager:close(dialog)
+                    toggleShowMissing()
+                    self:redrawList(menu, state)
+                end,
+            } },
+        },
+    }
+    UIManager:show(dialog)
 end
 
 --- The list screen: the cached copy at once, the server's copy when it comes.
 function SyncedHistory:showList()
-    local menu
-    local function onRow(row) self:openRow(menu, row) end
-    menu = Menu:new{
+    local state = {
+        rows = buildRows(getClient():cachedList()),
+        status = _(ListView.SYNCING),
+        empty = _(ListView.SYNCING),
+    }
+    local menu = Menu:new{
         name = "syncedhistory_list",
         title = _(ListView.TITLE),
         subtitle = _(ListView.SYNCING),
-        item_table = itemsFor(getClient():cachedList(), _(ListView.SYNCING), onRow),
+        item_table = {},
         covers_fullscreen = true,
         is_borderless = true,
         is_popout = false,
         title_bar_fm_style = true,
+        title_bar_left_icon = "appbar.menu",
         single_line = true,
     }
+    menu.onLeftButtonTap = function() self:showListMenu(menu, state) end
+    self:redrawList(menu, state)
     UIManager:show(menu)
     getClient():fetchList(function(list, info)
         if not UIManager:isWidgetShown(menu) then return end
-        local subtitle, empty
         if info.fresh then
-            subtitle = T(_("%1 books, synced just now"), #list)
-            empty = _(ListView.EMPTY)
+            state.status = _(ListView.SYNCED)
+            state.empty = _(ListView.EMPTY)
         else
-            subtitle = _(info.message)
-            empty = _(info.message)
+            state.status = _(info.message)
+            state.empty = _(info.message)
             if info.reason then
                 -- Not logged in, or the wrong matching method: say so plainly.
                 UIManager:show(InfoMessage:new{ text = _(info.message) })
             end
         end
-        menu:switchItemTable(nil, itemsFor(list, empty, onRow), nil, nil, subtitle)
+        state.rows = buildRows(list)
+        self:redrawList(menu, state)
     end)
 end
 
