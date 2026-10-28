@@ -23,7 +23,9 @@ export function buildRestartScript(port: number): string {
     '[ -n "$PID" ] && kill -9 $PID',
     'killall luajit',
     'sleep 5',
-    'cd /mnt/us/koreader && ./koreader.sh',
+    // --kual makes koreader.sh SIGSTOP the Kindle window manager (FW >= 5.7.2). Without it the
+    // Kindle status bar's clock and WiFi icon repaint over KOReader every minute.
+    'cd /mnt/us/koreader && ./koreader.sh --kual',
   ].join('; ');
   return inner;
 }

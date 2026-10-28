@@ -57,6 +57,10 @@ describe('buildRestartScript', () => {
     expect(buildRestartCommand(8889)).toBe(`nohup sh -c '${buildRestartScript(8889)}' > /tmp/ko_restart.log 2>&1 &`);
   });
 
+  test('launches koreader.sh with --kual so the Kindle status bar stays paused', () => {
+    expect(buildRestartScript(8888)).toContain('./koreader.sh --kual');
+  });
+
   test('rejects a bad port', () => {
     expect(() => buildRestartScript(0)).toThrow();
     expect(() => buildRestartScript(1.5)).toThrow();

@@ -39,6 +39,7 @@ crashing.
 | newline in a KOReader menu item text shows as a space, no paragraph break | [MENU_ITEM_NEWLINES_BECOME_SPACES](traps/MENU_ITEM_NEWLINES_BECOME_SPACES.md) | rssreader | 2026-10-28 |
 | address already in use on port 8888 after restarting KOReader | [PORT_8888_STAYS_BUSY_AFTER_RESTART](traps/PORT_8888_STAYS_BUSY_AFTER_RESTART.md) | koreader_mcp | 2026-10-28 |
 | a second device says 'Latest progress is coming from this device' and will not pull the position another device pushed | [RESTORED_SETTINGS_CLONE_PROGRESS_SYNC_DEVICE_ID](traps/RESTORED_SETTINGS_CLONE_PROGRESS_SYNC_DEVICE_ID.md) | kosync | 2026-10-30 |
+| a screenshot shows the Kindle clock, battery or WiFi icon in the top corners of KOReader, but the physical screen is clean | [SCREENSHOT_SHOWS_KINDLE_CLOCK_SCREEN_DOES_NOT](traps/SCREENSHOT_SHOWS_KINDLE_CLOCK_SCREEN_DOES_NOT.md) | kindle-gateway | 2026-10-29 |
 | list_devices returns an empty list or new tools are not callable after rebuilding the gateway | [TOOLS_MISSING_AFTER_GATEWAY_REBUILD](traps/TOOLS_MISSING_AFTER_GATEWAY_REBUILD.md) | kindle-gateway | 2026-10-30 |
 
 ## Reference
