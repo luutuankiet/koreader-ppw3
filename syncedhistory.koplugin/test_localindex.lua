@@ -58,15 +58,16 @@ if mode == "koreader" then
 
     -- The key KOReader's built-in sync computes for a book at `path` with the
     -- file-name method. Loading all of kosync's main.lua needs a running
-    -- device layer, so cut KOSync:getFileName and KOSync:getFileNameDigest
-    -- out of the installed source and run that text with kosync's own md5
-    -- and util. If the source has changed shape, fail loudly.
+    -- device layer, so cut KOSync:getFileNameDigest (and KOSync:getFileName,
+    -- which v2024.11 does not have yet) out of the installed source and run
+    -- that text with kosync's own md5 and util. If the source has changed
+    -- shape, fail loudly.
     local f = assert(io.open("plugins/kosync.koplugin/main.lua"))
     local src = f:read("*a")
     f:close()
-    local fn_name = src:match("\nfunction KOSync:getFileName%(%).-\nend\n")
+    local fn_name = src:match("\nfunction KOSync:getFileName%(%).-\nend\n") or ""
     local fn_digest = src:match("\nfunction KOSync:getFileNameDigest%(%).-\nend\n")
-    assert(fn_name and fn_digest, "kosync getFileName/getFileNameDigest not found")
+    assert(fn_digest, "kosync getFileNameDigest not found")
     local chunk = assert(loadstring("local KOSync, md5, util = ...\n" .. fn_name .. fn_digest))
     local KOSync = {}
     chunk(KOSync, md5, util)
