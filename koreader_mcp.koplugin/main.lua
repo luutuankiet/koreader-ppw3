@@ -56,8 +56,13 @@ function KOReaderMCP:init()
             self.gateway_url = config.gateway_url
             log("Gateway URL from config: " .. self.gateway_url)
         end
-        if config.port then
-            self.port = config.port
+        -- Optional listen port; the emulator sets 8889 because 8888 is taken on its host.
+        local port = tonumber(config.port)
+        if port then
+            self.port = port
+            log("Port from config: " .. self.port)
+        elseif config.port ~= nil then
+            log("Ignoring invalid port in config: " .. tostring(config.port))
         end
         if config.device_name then
             self.device_name = config.device_name
