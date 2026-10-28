@@ -45,12 +45,13 @@ local function template(s, ...)
     return (s:gsub("%%(%d)", function(n) return tostring(args[tonumber(n)]) end))
 end
 
--- The search as typed, trimmed; nil when there is nothing to search for.
-local function cleanQuery(q)
+--- The search as typed, trimmed; nil when there is nothing to search for.
+function ListView.cleanQuery(q)
     if type(q) ~= "string" then return nil end
     q = q:match("^%s*(.-)%s*$")
     return q ~= "" and q or nil
 end
+local cleanQuery = ListView.cleanQuery
 
 --- "42%" for 0.42; "0%" for nil. Rounded down, so 99.6% never reads 100%.
 function ListView.percent(p)

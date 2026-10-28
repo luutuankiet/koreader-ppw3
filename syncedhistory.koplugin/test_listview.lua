@@ -243,6 +243,16 @@ test("emptyText: the three empty cases, and nil when rows show", function()
     eq(ListView.emptyText(ListView.view(sampleRows(), { query = "50%" })), "No book matches \"50%\".")
 end)
 
+-- main.lua keeps cleanQuery's result as the list's search: nil means no
+-- search, so no "Clear search" entry.
+test("cleanQuery trims the search and turns a blank one into none", function()
+    eq(ListView.cleanQuery("  Dune "), "Dune")
+    eq(ListView.cleanQuery("a b"), "a b", "inner spaces kept")
+    eq(ListView.cleanQuery(""), nil)
+    eq(ListView.cleanQuery("   "), nil)
+    eq(ListView.cleanQuery(nil), nil)
+end)
+
 if mode == "koreader" then
     local function readFile(path)
         local f = assert(io.open(path, "r"), "cannot open " .. path)
@@ -296,6 +306,17 @@ if mode == "koreader" then
         check(io.open("resources/icons/mdlight/appbar.menu.svg", "r"), "icon appbar.menu missing")
         check(readFile("frontend/ui/widget/button.lua"):find('align = "center", -- or "left"', 1, true),
             "Button align changed")
+    end)
+
+    -- main.lua's showSearch: an InputDialog with a Cancel (id "close") and an
+    -- enter-default Search button, the keyboard shown, the text read back.
+    test("koreader: InputDialog calls used by the search box exist", function()
+        local src = readFile("frontend/ui/widget/inputdialog.lua")
+        check(src:find("function InputDialog:getInputText()", 1, true), "InputDialog:getInputText")
+        check(src:find("function InputDialog:onShowKeyboard(", 1, true), "InputDialog:onShowKeyboard")
+        check(src:find("btn.is_enter_default", 1, true), "is_enter_default")
+        check(src:find('self.button_table:getButtonById("close")', 1, true), "button id close")
+        check(src:find("input_hint", 1, true), "input_hint")
     end)
 
     -- Read as source: requiring UIManager outside a running KOReader needs
