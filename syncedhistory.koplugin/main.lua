@@ -292,6 +292,35 @@ function SyncedHistory:showListMenu(menu, state)
     UIManager:show(dialog)
 end
 
+-- A long press on a row: the whole name (the list cuts it to one line) and
+-- the rest of what the server knows. Open only for a book on this device,
+-- through the same path as a tap. The empty-list row has no document and no
+-- pop-up.
+function SyncedHistory:showDetails(menu, row)
+    if not (row and row.document) then return end
+    local dialog
+    local buttons = {}
+    if row.path then
+        buttons[1] = {
+            text = _("Open"),
+            callback = function()
+                UIManager:close(dialog)
+                self:openRow(menu, row)
+            end,
+        }
+    end
+    buttons[#buttons + 1] = {
+        text = _("Close"),
+        callback = function() UIManager:close(dialog) end,
+    }
+    dialog = ButtonDialog:new{
+        title = ListView.details(row, { gettext = _ }),
+        title_align = "left",
+        buttons = { buttons },
+    }
+    UIManager:show(dialog)
+end
+
 --- The list screen: the cached copy at once, the server's copy when it comes.
 function SyncedHistory:showList()
     local state = {
@@ -312,6 +341,11 @@ function SyncedHistory:showList()
         single_line = true,
     }
     menu.onLeftButtonTap = function() self:showListMenu(menu, state) end
+    -- MenuItem calls self.menu:onMenuHold(item, pos); the default does nothing.
+    menu.onMenuHold = function(_menu, item)
+        self:showDetails(menu, item)
+        return true
+    end
     self:redrawList(menu, state)
     UIManager:show(menu)
     getClient():fetchList(function(list, info)

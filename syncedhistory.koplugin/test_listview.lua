@@ -243,6 +243,59 @@ test("emptyText: the three empty cases, and nil when rows show", function()
     eq(ListView.emptyText(ListView.view(sampleRows(), { query = "50%" })), "No book matches \"50%\".")
 end)
 
+-- A fixed clock: the test runs the same in any time zone.
+local function fakeDate(fmt, t)
+    return fmt .. "@" .. tostring(t)
+end
+
+test("rows: keep the server's device and timestamp for the details", function()
+    local rows = ListView.rows({
+        { document = "a", device = "Kindle", timestamp = 1700000000 },
+        { document = "b", device = "", timestamp = "soon" },
+    }, { lookup = lookupFrom({}) })
+    eq(rows[1].device, "Kindle")
+    eq(rows[1].timestamp, 1700000000)
+    eq(rows[2].device, nil, "empty device is no device")
+    eq(rows[2].timestamp, nil, "a timestamp that is not a number is none")
+end)
+
+test("details: a book on this device", function()
+    local long = "A Very Long Book Name That The List Cuts Off Somewhere Around Here, Volume 2.epub"
+    local rows = ListView.rows({
+        { document = "a", filename = long, percentage = 0.426, device = "Kindle PW3", timestamp = 1700000000 },
+    }, { lookup = lookupFrom({ a = "/mnt/us/documents/Series/x.epub" }) })
+    eq(ListView.details(rows[1], { date = fakeDate }), table.concat({
+        long,
+        "",
+        "Progress: 42%",
+        "Last device: Kindle PW3",
+        "Last pushed: %Y-%m-%d %H:%M@1700000000",
+        "Folder: /mnt/us/documents/Series",
+    }, "\n"))
+end)
+
+test("details: a missing book, no timestamp, no device", function()
+    local rows = ListView.rows({ { document = "a", filename = "Gone.pdf" } }, { lookup = lookupFrom({}) })
+    eq(ListView.details(rows[1], { date = fakeDate }), table.concat({
+        "Gone.pdf",
+        "",
+        "Progress: 0%",
+        "Last device: unknown device",
+        "Last pushed: unknown",
+        "Folder: not on this device",
+    }, "\n"))
+end)
+
+test("details: translated, a book at the root, and the real os.date", function()
+    local rows = ListView.rows({ { document = "a", timestamp = 0, percentage = 1 } },
+        { lookup = lookupFrom({ a = "/book.epub" }) })
+    local text = ListView.details(rows[1], { gettext = function(s) return "<" .. s .. ">" end })
+    check(text:find("^book%.epub\n"), "local file name when the server has none:\n" .. text)
+    check(text:find("\n<Progress: 100%>\n", 1, true), "template filled:\n" .. text)
+    check(text:find("\n<Folder: />$"), "root folder is /:\n" .. text)
+    check(text:find("\n<Last pushed: %d%d%d%d%-%d%d%-%d%d %d%d:%d%d>\n"), "os.date used:\n" .. text)
+end)
+
 -- main.lua keeps cleanQuery's result as the list's search: nil means no
 -- search, so no "Clear search" entry.
 test("cleanQuery trims the search and turns a blank one into none", function()
@@ -306,6 +359,19 @@ if mode == "koreader" then
         check(io.open("resources/icons/mdlight/appbar.menu.svg", "r"), "icon appbar.menu missing")
         check(readFile("frontend/ui/widget/button.lua"):find('align = "center", -- or "left"', 1, true),
             "Button align changed")
+    end)
+
+    -- main.lua's long press: Menu calls onMenuHold(item) on the menu
+    -- instance, and the pop-up is a ButtonDialog whose title wraps.
+    test("koreader: Menu calls onMenuHold(item); ButtonDialog title wraps", function()
+        local menu_src = readFile("frontend/ui/widget/menu.lua")
+        check(menu_src:find("function Menu:onMenuHold(item", 1, true), "Menu:onMenuHold(item) missing")
+        check(menu_src:find("self.menu:onMenuHold(self.entry", 1, true),
+            "MenuItem hold no longer calls menu:onMenuHold(entry)")
+        local bd = readFile("frontend/ui/widget/buttondialog.lua")
+        local title = bd:match("TextBoxWidget:new{%s*text = self%.title,.-}")
+        check(title, "ButtonDialog title is no longer a TextBoxWidget")
+        check(title:find("alignment = self.title_align", 1, true), "ButtonDialog title_align")
     end)
 
     -- main.lua's showSearch: an InputDialog with a Cancel (id "close") and an
