@@ -359,9 +359,8 @@ if mode == "koreader" then
         check(menu_src:find("self.menu:onMenuHold(self.entry", 1, true),
             "MenuItem hold no longer calls menu:onMenuHold(entry)")
         local bd = readFile("frontend/ui/widget/buttondialog.lua")
-        local title = bd:match("if self%.title then.-title_widget_height")
-        check(title and title:find("TextBoxWidget:new{%s*text = self%.title,"),
-            "ButtonDialog title is no longer a TextBoxWidget")
+        local title = bd:match("TextBoxWidget:new{%s*text = self%.title,.-}")
+        check(title, "ButtonDialog title is no longer a TextBoxWidget")
         check(title:find("alignment = self.title_align", 1, true), "ButtonDialog title_align")
     end)
 
