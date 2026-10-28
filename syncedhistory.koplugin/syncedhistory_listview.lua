@@ -73,7 +73,9 @@ function ListView.rows(list, opts)
             local name = type(row.filename) == "string" and row.filename ~= "" and row.filename or nil
             local device = type(row.device) == "string" and row.device ~= "" and row.device or _(ListView.UNKNOWN_DEVICE)
             rows[#rows + 1] = {
-                text = name or _(ListView.UNKNOWN),
+                -- Progress pushed before this plugin carries no file name; the
+                -- local copy, when there is one, still has it.
+                text = name or (path and path:match("([^/]+)$")) or _(ListView.UNKNOWN),
                 mandatory = table.concat({
                     ListView.percent(row.percentage),
                     device,

@@ -123,6 +123,15 @@ test("rows: no file name or device on the server", function()
     eq(rows[2].text, "unknown book")
 end)
 
+test("rows: no file name from the server, but on this device: local file name", function()
+    local rows = ListView.rows({ { document = "k", percentage = 0.32, device = "Kindle", timestamp = 1 } }, {
+        lookup = lookupFrom({ k = "/lib/sub/Local Name.epub" }),
+    })
+    eq(rows[1].text, "Local Name.epub")
+    eq(rows[1].filename, nil)
+    eq(rows[1].mandatory, "32% · Kindle · on this device")
+end)
+
 test("rows: translated through gettext", function()
     local rows = ListView.rows({ { document = "x", timestamp = 1 } }, {
         lookup = lookupFrom({}),
@@ -165,6 +174,12 @@ if mode == "koreader" then
         check(body:find("self:getProgress%(true, true%)"), "pull action body changed:\n" .. body)
     end)
 
+    -- main.lua's readKosyncSettings reads one of these two places.
+    test("koreader: kosync keeps its settings in kosync.lua or the reader settings", function()
+        check(kosync:find('"/kosync.lua"', 1, true) or kosync:find('G_reader_settings:readSetting("kosync"', 1, true),
+            "kosync settings moved")
+    end)
+
     test("koreader: an interactive pull jumps without a prompt", function()
         local body = functionBody(kosync, "KOSync:getProgress")
         local branch = body:match("if interactive then%s*\n%s*%-%-[^\n]*\n%s*%-%-[^\n]*\n%s*self:syncToProgress%(body%.progress%)")
@@ -188,9 +203,16 @@ if mode == "koreader" then
         local ui = readFile("frontend/ui/uimanager.lua")
         check(ui:find("function UIManager:isWidgetShown(widget)", 1, true), "UIManager:isWidgetShown")
         check(ui:find("function UIManager:nextTick(", 1, true), "UIManager:nextTick")
+        -- main.lua's openBook: filemanagerutil.openFile, or before it existed
+        -- (v2024.11) ReaderUI:switchDocument and FileManager:openFile.
         local fmu = readFile("frontend/apps/filemanager/filemanagerutil.lua")
-        check(fmu:find("function filemanagerutil.openFile(ui, file, caller_pre_callback, no_dialog)", 1, true),
-            "filemanagerutil.openFile signature changed")
+        if not fmu:find("function filemanagerutil.openFile(ui, file, caller_pre_callback, no_dialog)", 1, true) then
+            check(not fmu:find("function filemanagerutil.openFile(", 1, true), "filemanagerutil.openFile signature changed")
+            check(readFile("frontend/apps/reader/readerui.lua"):find("function ReaderUI:switchDocument(new_file", 1, true),
+                "ReaderUI:switchDocument")
+            check(readFile("frontend/apps/filemanager/filemanager.lua"):find("function FileManager:openFile(file", 1, true),
+                "FileManager:openFile")
+        end
         local ev = require("ui/event"):new("KOSyncPullProgress")
         eq(ev.handler, "onKOSyncPullProgress", "event handler name")
     end)

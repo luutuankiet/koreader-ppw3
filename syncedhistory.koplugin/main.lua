@@ -74,12 +74,13 @@ end
 
 -- The built-in progress sync settings. Its live table when it is loaded (it
 -- only is while a book is open, and it may hold a login not flushed yet),
--- otherwise its settings file.
+-- otherwise its settings file, or up to v2024.11 the "kosync" key of the
+-- global reader settings.
 local live_kosync
 local function readKosyncSettings()
     if live_kosync and live_kosync.settings then return live_kosync.settings end
     local file = DataStorage:getSettingsDir() .. "/kosync.lua"
-    if lfs.attributes(file, "mode") ~= "file" then return nil end
+    if lfs.attributes(file, "mode") ~= "file" then return G_reader_settings:readSetting("kosync") end
     return LuaSettings:open(file):readSetting("settings")
 end
 
@@ -150,6 +151,19 @@ function SyncedHistory:onCloseDocument()
     live_kosync = nil
 end
 
+-- filemanagerutil.openFile arrived after v2024.11. Without it, make the two
+-- calls it makes for a book: switch documents in the reader, or open the
+-- file from the file browser.
+local function openBook(ui, path)
+    if filemanagerutil.openFile then
+        filemanagerutil.openFile(ui, path)
+    elseif ui.document then
+        ui:switchDocument(path)
+    else
+        ui:openFile(path)
+    end
+end
+
 function SyncedHistory:openRow(menu, row)
     -- Look again: the file may have moved since the list was built.
     local path = row.document and getIndex():lookup(row.document)
@@ -166,7 +180,7 @@ function SyncedHistory:openRow(menu, row)
     end
     logger.info("syncedhistory: opening", path)
     pending_pull = path
-    filemanagerutil.openFile(self.ui, path)
+    openBook(self.ui, path)
 end
 
 -- Each row's tap goes through item.callback (Menu:onMenuChoice). The menu
