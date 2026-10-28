@@ -320,10 +320,26 @@ function handlers.capture_screenshot(params)
     local ss_path = "/tmp/mcp_ss.png"
     -- Capture framebuffer (fbgrab from USBNet)
     local fbgrab = "/mnt/us/usbnet/bin/fbgrab"
-    local ok = os.execute(fbgrab .. " " .. ss_path)
-    -- Lua 5.1: os.execute returns exit status as number (0 = success)
-    if ok ~= 0 and ok ~= true then
-        return nil, {code = -32603, message = "fbgrab failed (exit: " .. tostring(ok) .. ")"}
+    local fbgrab_file = io.open(fbgrab, "r")
+    if fbgrab_file then
+        fbgrab_file:close()
+        local ok = os.execute(fbgrab .. " " .. ss_path)
+        -- Lua 5.1: os.execute returns exit status as number (0 = success)
+        if ok ~= 0 and ok ~= true then
+            return nil, {code = -32603, message = "fbgrab failed (exit: " .. tostring(ok) .. ")"}
+        end
+    else
+        -- No fbgrab (the emulator): KOReader writes its own screen buffer to PNG.
+        if not Device or not Device.screen or not Device.screen.shot then
+            return nil, {code = -32603, message = "no fbgrab and no KOReader screen API"}
+        end
+        os.remove(ss_path)  -- a leftover file would hide a failed shot
+        local shot_ok, shot_err = pcall(function() Device.screen:shot(ss_path) end)
+        local png = shot_ok and io.open(ss_path, "rb")
+        if not png then
+            return nil, {code = -32603, message = "Screen:shot failed: " .. tostring(shot_err)}
+        end
+        png:close()
     end
     -- Base64 encode the PNG
     local handle = io.popen("base64 " .. ss_path)

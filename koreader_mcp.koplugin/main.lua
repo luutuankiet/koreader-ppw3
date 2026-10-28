@@ -68,6 +68,12 @@ function KOReaderMCP:init()
             self.device_name = config.device_name
             log("Device name from config: " .. self.device_name)
         end
+        -- Optional address sent to the gateway instead of the discovered local IP.
+        -- The emulator sets its host's tailnet name: its discovered IP is a LAN address.
+        if type(config.advertise_host) == "string" and config.advertise_host ~= "" then
+            self.advertise_host = config.advertise_host
+            log("Advertise host from config: " .. self.advertise_host)
+        end
     end
 
     -- Add plugin dir to package path so we can require our modules
@@ -115,7 +121,7 @@ function KOReaderMCP:registerWithGateway()
 
     -- Get device name and IP
     local device_name = self.device_name or ("kindle-" .. (os.getenv("HOSTNAME") or "unknown"))
-    local ip = self:getLocalIP()
+    local ip = self.advertise_host or self:getLocalIP()
     if not ip then
         log("Cannot determine local IP, skipping registration")
         return
