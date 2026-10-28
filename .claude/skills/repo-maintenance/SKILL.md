@@ -27,6 +27,7 @@ crashing.
 | koreader_mcp stops responding after run_command that calls curl on the same device | [DEVICE_SERVER_HANGS_ON_SELF_CALL](../../../docs/traps/DEVICE_SERVER_HANGS_ON_SELF_CALL.md) | koreader_mcp | 2026-10-28 |
 | Kindle froze after I sent touch events with evemu-event | [FREEZES_AFTER_RAW_TOUCH_INJECTION](../../../docs/traps/FREEZES_AFTER_RAW_TOUCH_INJECTION.md) | device-control | 2026-10-28 |
 | git status shows a symlinked plugin directory as untracked although it is in .gitignore | [GITIGNORE_ENTRY_NOT_MATCHING_SYMLINK](../../../docs/traps/GITIGNORE_ENTRY_NOT_MATCHING_SYMLINK.md) | repo-layout | 2026-10-28 |
+| every gateway tool says \"Device 'kindle-N' is offline\" while the Kindle is awake and on WiFi | [KINDLE_AWAKE_BUT_GATEWAY_SAYS_OFFLINE](../../../docs/traps/KINDLE_AWAKE_BUT_GATEWAY_SAYS_OFFLINE.md) | kindle-gateway | 2026-10-28 |
 | screenshots or deploys fail on the Kindle with no space left on device | [KINDLE_TMP_FULL_SCREENSHOTS_FAIL](../../../docs/traps/KINDLE_TMP_FULL_SCREENSHOTS_FAIL.md) | device-control | 2026-10-28 |
 | rewrote settings/kosync.lua on a running KOReader and it still syncs with the old server or account | [KOSYNC_SETTINGS_FILE_EDIT_IGNORED_UNTIL_RESTART](../../../docs/traps/KOSYNC_SETTINGS_FILE_EDIT_IGNORED_UNTIL_RESTART.md) | kosync | 2026-10-28 |
 | get_menu_items says no menu is visible while KOReader's main menu is open on screen | [MAIN_MENU_INVISIBLE_TO_GATEWAY_MENU_TOOLS](../../../docs/traps/MAIN_MENU_INVISIBLE_TO_GATEWAY_MENU_TOOLS.md) | koreader_mcp | 2026-10-28 |
