@@ -27,13 +27,13 @@ crashing.
 | koreader_mcp stops responding after run_command that calls curl on the same device | [DEVICE_SERVER_HANGS_ON_SELF_CALL](../../../docs/traps/DEVICE_SERVER_HANGS_ON_SELF_CALL.md) | koreader_mcp | 2026-10-28 |
 | Kindle froze after I sent touch events with evemu-event | [FREEZES_AFTER_RAW_TOUCH_INJECTION](../../../docs/traps/FREEZES_AFTER_RAW_TOUCH_INJECTION.md) | device-control | 2026-10-28 |
 | git status shows a symlinked plugin directory as untracked although it is in .gitignore | [GITIGNORE_ENTRY_NOT_MATCHING_SYMLINK](../../../docs/traps/GITIGNORE_ENTRY_NOT_MATCHING_SYMLINK.md) | repo-layout | 2026-10-28 |
-| every gateway tool says \"Device 'kindle-N' is offline\" while the Kindle is awake and on WiFi | [KINDLE_AWAKE_BUT_GATEWAY_SAYS_OFFLINE](../../../docs/traps/KINDLE_AWAKE_BUT_GATEWAY_SAYS_OFFLINE.md) | kindle-gateway | 2026-10-28 |
+| every gateway tool says \"Device 'kindle-N' is offline\" while the Kindle is awake and on WiFi | [KINDLE_AWAKE_BUT_GATEWAY_SAYS_OFFLINE](../../../docs/traps/KINDLE_AWAKE_BUT_GATEWAY_SAYS_OFFLINE.md) | kindle-gateway | 2026-10-30 |
 | screenshots or deploys fail on the Kindle with no space left on device | [KINDLE_TMP_FULL_SCREENSHOTS_FAIL](../../../docs/traps/KINDLE_TMP_FULL_SCREENSHOTS_FAIL.md) | device-control | 2026-10-28 |
 | rewrote settings/kosync.lua on a running KOReader and it still syncs with the old server or account | [KOSYNC_SETTINGS_FILE_EDIT_IGNORED_UNTIL_RESTART](../../../docs/traps/KOSYNC_SETTINGS_FILE_EDIT_IGNORED_UNTIL_RESTART.md) | kosync | 2026-10-28 |
 | get_menu_items says no menu is visible while KOReader's main menu is open on screen | [MAIN_MENU_INVISIBLE_TO_GATEWAY_MENU_TOOLS](../../../docs/traps/MAIN_MENU_INVISIBLE_TO_GATEWAY_MENU_TOOLS.md) | koreader_mcp | 2026-10-28 |
 | newline in a KOReader menu item text shows as a space, no paragraph break | [MENU_ITEM_NEWLINES_BECOME_SPACES](../../../docs/traps/MENU_ITEM_NEWLINES_BECOME_SPACES.md) | rssreader | 2026-10-28 |
 | address already in use on port 8888 after restarting KOReader | [PORT_8888_STAYS_BUSY_AFTER_RESTART](../../../docs/traps/PORT_8888_STAYS_BUSY_AFTER_RESTART.md) | koreader_mcp | 2026-10-28 |
-| list_devices returns an empty list or new tools are not callable after rebuilding the gateway | [TOOLS_MISSING_AFTER_GATEWAY_REBUILD](../../../docs/traps/TOOLS_MISSING_AFTER_GATEWAY_REBUILD.md) | kindle-gateway | 2026-10-28 |
+| list_devices returns an empty list or new tools are not callable after rebuilding the gateway | [TOOLS_MISSING_AFTER_GATEWAY_REBUILD](../../../docs/traps/TOOLS_MISSING_AFTER_GATEWAY_REBUILD.md) | kindle-gateway | 2026-10-30 |
 
 ## Reference
 
@@ -52,6 +52,7 @@ it with a new one rather than editing it.
 - [Plugins live at the workspace root, with the reader plugin as a separate repository](../../../docs/adr/0001-flat-plugin-layout.md)
 - [Make the RSS reader fast by pre-baking content on a server, not by caching on the device](../../../docs/adr/0002-prebake-server-side-for-rss.md)
 - [Working notes were promoted to docs/ and the private journal retired](../../../docs/adr/0003-promote-working-notes-into-docs.md)
+- [The gateway serves MCP statelessly, with no session IDs](../../../docs/adr/0004-stateless-gateway-mcp-transport.md)
 
 <!-- END GENERATED INDEX -->
 

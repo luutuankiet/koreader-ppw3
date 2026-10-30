@@ -115,7 +115,7 @@ describe('E2E: kindle-gateway + fake kindle', () => {
     expect(res.data.device.status).toBe('online');
   });
 
-  test('MCP initialize session', async () => {
+  test('MCP initialize (stateless: no session id issued)', async () => {
     const res = await post(GATEWAY_PORT, '/mcp', {
       jsonrpc: '2.0',
       id: 1,
@@ -128,12 +128,12 @@ describe('E2E: kindle-gateway + fake kindle', () => {
     }, { 'Accept': 'application/json, text/event-stream' });
     expect(res.status).toBe(200);
     expect(res.data).toBeDefined();
-    // Session ID returned in header
-    expect(res.headers['mcp-session-id']).toBeDefined();
+    // Stateless transport: no session ID for a client to hold onto
+    expect(res.headers['mcp-session-id']).toBeUndefined();
   });
 
   test('MCP tool call: list_devices via full protocol', async () => {
-    // Initialize a new MCP session
+    // Initialize (optional on a stateless server, kept to mirror a real client)
     const initRes = await post(GATEWAY_PORT, '/mcp', {
       jsonrpc: '2.0',
       id: 10,
@@ -145,14 +145,12 @@ describe('E2E: kindle-gateway + fake kindle', () => {
       },
     }, { 'Accept': 'application/json, text/event-stream' });
     expect(initRes.status).toBe(200);
-    const sessionId = initRes.headers['mcp-session-id'] as string;
-    expect(sessionId).toBeDefined();
 
     // Send initialized notification
     await post(GATEWAY_PORT, '/mcp', {
       jsonrpc: '2.0',
       method: 'notifications/initialized',
-    }, { 'Accept': 'application/json, text/event-stream', 'mcp-session-id': sessionId });
+    }, { 'Accept': 'application/json, text/event-stream' });
 
     // Call list_devices tool
     const toolRes = await post(GATEWAY_PORT, '/mcp', {
@@ -163,7 +161,7 @@ describe('E2E: kindle-gateway + fake kindle', () => {
         name: 'list_devices',
         arguments: {},
       },
-    }, { 'Accept': 'application/json, text/event-stream', 'mcp-session-id': sessionId });
+    }, { 'Accept': 'application/json, text/event-stream' });
     expect(toolRes.status).toBe(200);
     // StreamableHTTP may return SSE or JSON — parse accordingly
     let content: any;
@@ -188,27 +186,43 @@ describe('E2E: kindle-gateway + fake kindle', () => {
     }
   });
 
-  test('multiple MCP sessions can coexist', async () => {
-    // Session A
-    const resA = await post(GATEWAY_PORT, '/mcp', {
-      jsonrpc: '2.0', id: 20, method: 'initialize',
-      params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'session-a', version: '1.0.0' } },
-    }, { 'Accept': 'application/json, text/event-stream' });
-    expect(resA.status).toBe(200);
-    const sidA = resA.headers['mcp-session-id'];
+  describe('stateless transport', () => {
+    const MCP_ACCEPT = { 'Accept': 'application/json, text/event-stream' };
+    // Responses may arrive as SSE; pull the JSON-RPC payload out of the data: line.
+    const rpcPayload = (data: any) => {
+      if (typeof data !== 'string') return data;
+      const line = data.split('\n').find((l: string) => l.startsWith('data:'));
+      return line ? JSON.parse(line.slice(5)) : data;
+    };
+    const toolNames = (data: any) => rpcPayload(data).result.tools.map((t: { name: string }) => t.name);
 
-    // Session B
-    const resB = await post(GATEWAY_PORT, '/mcp', {
-      jsonrpc: '2.0', id: 30, method: 'initialize',
-      params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'session-b', version: '1.0.0' } },
-    }, { 'Accept': 'application/json, text/event-stream' });
-    expect(resB.status).toBe(200);
-    const sidB = resB.headers['mcp-session-id'];
+    test('tools/list works without a prior initialize', async () => {
+      const res = await post(GATEWAY_PORT, '/mcp', { jsonrpc: '2.0', id: 40, method: 'tools/list', params: {} }, MCP_ACCEPT);
+      expect(res.status).toBe(200);
+      expect(res.headers['mcp-session-id']).toBeUndefined();
+      expect(toolNames(res.data)).toContain('list_devices');
+    });
 
-    // Both sessions have unique IDs
-    expect(sidA).toBeDefined();
-    expect(sidB).toBeDefined();
-    expect(sidA).not.toBe(sidB);
+    test('a stale or bogus mcp-session-id header is ignored', async () => {
+      const res = await post(GATEWAY_PORT, '/mcp', { jsonrpc: '2.0', id: 41, method: 'tools/list', params: {} },
+        { ...MCP_ACCEPT, 'mcp-session-id': 'bogus' });
+      expect(res.status).toBe(200);
+      expect(toolNames(res.data)).toContain('list_devices');
+    });
+
+    test('GET and DELETE /mcp return 405', async () => {
+      for (const method of ['GET', 'DELETE']) {
+        const res = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+          http.request({ hostname: '127.0.0.1', port: GATEWAY_PORT, path: '/mcp', method, headers: MCP_ACCEPT }, (r) => {
+            let buf = '';
+            r.on('data', (c) => { buf += c; });
+            r.on('end', () => resolve({ status: r.statusCode!, body: buf }));
+          }).on('error', reject).end();
+        });
+        expect(res.status).toBe(405);
+        expect(JSON.parse(res.body).error.message).toMatch(/Method not allowed/);
+      }
+    });
   });
 
   test('fake kindle health is reachable from gateway host', async () => {

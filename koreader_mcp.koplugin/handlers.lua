@@ -319,6 +319,7 @@ end
 --- capture_screenshot: Capture e-ink framebuffer, return base64 PNG
 --- The gateway converts this to an MCP image content block
 function handlers.capture_screenshot(params)
+    -- Android apps cannot write /tmp, so on Android this fails with "Screen:shot failed: nil".
     local ss_path = "/tmp/mcp_ss.png"
     -- Capture framebuffer (fbgrab from USBNet)
     local fbgrab = "/mnt/us/usbnet/bin/fbgrab"

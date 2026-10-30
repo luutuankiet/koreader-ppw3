@@ -175,51 +175,33 @@ export function createApp(registry: DeviceRegistry) {
     return server;
   }
 
-  // --- MCP StreamableHTTP transport ---
-  const sessions = new Map<string, { server: McpServer; transport: StreamableHTTPServerTransport }>();
-
+  // --- MCP StreamableHTTP transport (stateless) ---
+  // Stateless: every POST gets a fresh server + transport and no session ID is
+  // issued, so a client can never hold a session ID the gateway has forgotten
+  // (gateway restart, closed stream). Tools read only the shared device registry.
   app.post('/mcp', async (req: Request, res: Response) => {
+    const server = createMcpServer();
     try {
-      const sessionId = req.headers['mcp-session-id'] as string | undefined;
-      if (sessionId && sessions.has(sessionId)) {
-        const session = sessions.get(sessionId)!;
-        await session.transport.handleRequest(req, res, req.body);
-      } else {
-        const server = createMcpServer();
-        const transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => `kindle-gw-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          onsessioninitialized: (sid) => { sessions.set(sid, { server, transport }); },
-        });
-        transport.onclose = () => {
-          const sid = (transport as any).sessionId;
-          if (sid) sessions.delete(sid);
-        };
-        await server.connect(transport);
-        await transport.handleRequest(req, res, req.body);
-      }
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      res.on('close', () => {
+        transport.close();
+        server.close();
+      });
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
     } catch (err) {
       console.error('[mcp] Error handling request:', err);
-      if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
+      if (!res.headersSent) {
+        res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'Internal server error' }, id: null });
+      }
     }
   });
 
-  app.get('/mcp', async (req: Request, res: Response) => {
-    const sessionId = req.headers['mcp-session-id'] as string | undefined;
-    if (sessionId && sessions.has(sessionId)) {
-      await sessions.get(sessionId)!.transport.handleRequest(req, res);
-    } else {
-      res.status(400).json({ error: 'No valid session. Send an initialize request first.' });
-    }
-  });
-
-  app.delete('/mcp', async (req: Request, res: Response) => {
-    const sessionId = req.headers['mcp-session-id'] as string | undefined;
-    if (sessionId && sessions.has(sessionId)) {
-      await sessions.get(sessionId)!.transport.handleRequest(req, res);
-    } else {
-      res.status(400).json({ error: 'No valid session.' });
-    }
-  });
+  const methodNotAllowed = (_req: Request, res: Response) => {
+    res.status(405).json({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed (stateless server)' }, id: null });
+  };
+  app.get('/mcp', methodNotAllowed);
+  app.delete('/mcp', methodNotAllowed);
 
   return app;
 }

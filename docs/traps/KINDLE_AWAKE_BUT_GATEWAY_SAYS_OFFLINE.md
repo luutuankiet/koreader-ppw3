@@ -1,7 +1,7 @@
 ---
 symptom: "every gateway tool says \"Device 'kindle-N' is offline\" while the Kindle is awake and on WiFi"
 area: kindle-gateway
-verified: 2026-10-28
+verified: 2026-10-30
 ---
 
 # A Kindle that woke up stays offline in the gateway
@@ -22,3 +22,5 @@ curl -s -X POST http://<gateway-host>:9999/register -H 'Content-Type: applicatio
 ```
 
 Toggling WiFi on the Kindle also works, because it fires `onNetworkConnected`.
+
+The same cause keeps an Android phone running `koreader_mcp` out of the gateway entirely: Android starts KOReader with WiFi already up, so `onNetworkConnected` never fires and the phone never registers, not even once. Observed: a phone answering `/health` on port 8888 while `/health` on the gateway did not count it. Register it by hand with the body above, using the phone's LAN address.
