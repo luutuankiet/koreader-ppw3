@@ -3,29 +3,14 @@ import * as path from 'path';
 /**
  * Shell command run on the device (through koreader_mcp's run_command) to restart KOReader.
  * It detaches and sleeps first so the run_command reply gets out before KOReader dies.
- * The kill step targets whatever listens on the device's own koreader_mcp port: the emulator
- * listens on 8889 and shares its host's network, where 8888 may belong to something else.
  */
-export function buildRestartCommand(port: number): string {
-  return `nohup sh -c '${buildRestartScript(port)}' > /tmp/ko_restart.log 2>&1 &`;
+export function buildRestartCommand(): string {
+  return `nohup sh -c '${buildRestartScript()}' > /tmp/ko_restart.log 2>&1 &`;
 }
 
 /** The script buildRestartCommand detaches. Contains no single quote, so it can be wrapped in one. */
-export function buildRestartScript(port: number): string {
-  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
-    throw new Error(`Invalid device port: ${port}`);
-  }
-  // Inner script, run by `sh -c '...'`. Column 4 of `netstat -tlnp` is the local address,
-  // the last column is PID/program ("-" for processes we cannot see, skipped).
-  const inner = [
-    'sleep 2',
-    `PID=$(netstat -tlnp 2>/dev/null | awk "\\$4 ~ /:${port}\\$/ && \\$NF ~ /^[0-9]+\\// {print \\$NF}" | cut -d/ -f1 | head -n 1)`,
-    '[ -n "$PID" ] && kill -9 $PID',
-    'killall luajit',
-    'sleep 5',
-    'cd /mnt/us/koreader && ./koreader.sh',
-  ].join('; ');
-  return inner;
+export function buildRestartScript(): string {
+  return ['sleep 2', 'killall luajit', 'sleep 5', 'cd /mnt/us/koreader && ./koreader.sh'].join('; ');
 }
 
 export type SourceResolution =
