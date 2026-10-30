@@ -1,4 +1,6 @@
 ---
+title: Plugin installer
+covers: where the on-device plugin installer reads the package list, downloads and checks an archive, swaps the plugin folder, keeps the backup and rolls back
 verified: 2026-10-31
 ---
 

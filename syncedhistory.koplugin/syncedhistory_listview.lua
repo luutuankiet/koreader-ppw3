@@ -11,13 +11,14 @@ device. No KOReader dependency, so it runs outside KOReader:
         gettext = _,                                          -- optional
     })
     -- rows[i] = { text, mandatory, dim, document, filename, path, missing,
-    --             percentage, device, timestamp }
+    --             percentage, device, timestamp, keys, local_document }
 
     local v = ListView.view(rows, { show_missing = false, query = "dune" })
     -- v.rows to show, v.total, v.on_device, v.matched, v.query
     ListView.subtitle(v, { status = "synced just now", gettext = _ })
     ListView.emptyText(v, { empty = "No books on the sync server yet.", gettext = _ })
     ListView.details(rows[1], { gettext = _, date = os.date }) -- long-press text
+    ListView.removeText(rows[1], { gettext = _ })               -- confirm text
 
 Lua 5.1 only.
 ]]
@@ -45,6 +46,11 @@ ListView.DETAIL_FOLDER = "Folder: %1"
 ListView.NOT_HERE = "not on this device"
 ListView.UNKNOWN_TIME = "unknown"
 ListView.DATE_FORMAT = "%Y-%m-%d %H:%M"
+ListView.REMOVE = "Remove from list"
+ListView.REMOVE_CONFIRM = "Remove \"%1\" from the synced reading list?\n\nIts progress is deleted from the sync server for every device. A book still being read comes back with its next progress push."
+ListView.REMOVE_CONFIRM_NAMES = "Remove \"%1\" from the synced reading list?\n\nIts progress is deleted from the sync server for every device, under all %2 file names it was saved as. A book still being read comes back with its next progress push."
+ListView.REMOVING = "Removing..."
+ListView.REFRESH = "Refresh"
 
 local function identity(s) return s end
 
@@ -95,6 +101,53 @@ local function sortNewestFirst(list)
 end
 
 --[[--
+Every sync key of a server row, newest first: its aliases when the server
+merged several file names into one book, else just its document.
+
+@treturn table list of { document, filename }
+]]
+function ListView.aliases(row)
+    local out = {}
+    if type(row) ~= "table" then return out end
+    if type(row.aliases) == "table" then
+        for _i, a in ipairs(row.aliases) do
+            if type(a) == "table" and type(a.document) == "string" and a.document ~= "" then
+                out[#out + 1] = {
+                    document = a.document,
+                    filename = type(a.filename) == "string" and a.filename ~= "" and a.filename or nil,
+                }
+            end
+        end
+    end
+    if #out == 0 and type(row.document) == "string" then
+        out[1] = {
+            document = row.document,
+            filename = type(row.filename) == "string" and row.filename ~= "" and row.filename or nil,
+        }
+    end
+    return out
+end
+
+--[[--
+The local copy of a row: the first alias, newest first, whose key is in the
+local index.
+
+@tparam table row a server row, or a row from ListView.rows (keys kept)
+@tparam function lookup function(document key) -> local path or nil
+@treturn string|nil local path
+@treturn string|nil the key that matched
+@treturn string|nil that alias's file name as the server knows it
+]]
+function ListView.localMatch(row, lookup)
+    local aliases = row and row.keys or ListView.aliases(row)
+    for _i, a in ipairs(aliases) do
+        local path = lookup(a.document)
+        if path then return path, a.document, a.filename end
+    end
+    return nil
+end
+
+--[[--
 Build the Menu rows.
 
 @tparam table|nil list rows from Client:fetchList or Client:cachedList
@@ -111,8 +164,12 @@ function ListView.rows(list, opts)
     for _i, entry in ipairs(sortNewestFirst(list)) do
         local row = entry.row
         if type(row) == "table" and type(row.document) == "string" then
-            local path = opts.lookup(row.document)
+            local keys = ListView.aliases(row)
+            local path, local_document, local_name = ListView.localMatch({ keys = keys }, opts.lookup)
+            -- On this device: the name of the alias found here. Otherwise the
+            -- newest name the server has.
             local name = type(row.filename) == "string" and row.filename ~= "" and row.filename or nil
+            if path then name = local_name end
             local device = type(row.device) == "string" and row.device ~= "" and row.device or _(ListView.UNKNOWN_DEVICE)
             rows[#rows + 1] = {
                 -- Progress pushed before this plugin carries no file name; the
@@ -129,6 +186,9 @@ function ListView.rows(list, opts)
                 percentage = row.percentage,
                 path = path,
                 missing = path == nil,
+                -- Every key of the book, for opening and for removing it.
+                keys = keys,
+                local_document = local_document,
                 -- As the server sent them, for the long-press details.
                 device = type(row.device) == "string" and row.device ~= "" and row.device or nil,
                 timestamp = type(row.timestamp) == "number" and row.timestamp or nil,
@@ -240,6 +300,16 @@ function ListView.details(row, opts)
         template(_(ListView.DETAIL_PUSHED), pushed),
         template(_(ListView.DETAIL_FOLDER), folder),
     }, "\n")
+end
+
+--- The confirm text of "Remove from list"; it names the alias count when
+-- the server merged several file names into the book.
+function ListView.removeText(row, opts)
+    opts = opts or {}
+    local _ = opts.gettext or identity
+    local n = type(row.keys) == "table" and #row.keys or 1
+    if n > 1 then return template(_(ListView.REMOVE_CONFIRM_NAMES), tostring(row.text), n) end
+    return template(_(ListView.REMOVE_CONFIRM), tostring(row.text))
 end
 
 return ListView

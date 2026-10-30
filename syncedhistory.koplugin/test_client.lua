@@ -232,6 +232,93 @@ test("fetch failure keeps the cached list and says so", function()
     check(got_info.message == Client.MSG_NO_CACHE, "wrong no-cache message")
 end)
 
+local function aliasBody()
+    if mode == "koreader" then
+        return '[{"document":"new","percentage":0.37,"device":"Kindle","device_id":"d1","timestamp":300,'
+            .. '"filename":"Steve Jobs - Walter Isaacson.epub","aliases":['
+            .. '{"document":"new","filename":"Steve Jobs - Walter Isaacson.epub"},'
+            .. '{"document":"old","filename":null}]},'
+            .. '{"document":"solo","percentage":0.1,"device":"Kobo","timestamp":100,"filename":"Emma.epub"}]'
+    end
+    return env.json_encode({
+        { document = "new", percentage = 0.37, device = "Kindle", device_id = "d1", timestamp = 300,
+          filename = "Steve Jobs - Walter Isaacson.epub", aliases = {
+            { document = "new", filename = "Steve Jobs - Walter Isaacson.epub" },
+            { document = "old" },
+            { filename = "no key, dropped" },
+          } },
+        { document = "solo", percentage = 0.1, device = "Kobo", timestamp = 100, filename = "Emma.epub" },
+    })
+end
+
+test("fetch: aliases kept, null alias file name becomes nil, no aliases stays nil", function()
+    local settings = env.newSettings()
+    local client = newClient(GOOD, { status = 200, body = aliasBody() }, settings)
+    local got
+    client:fetchList(function(list) got = list end)
+    check(got and #got == 2, "rows")
+    local a = got[1].aliases
+    check(type(a) == "table" and #a == 2, "aliases " .. tostring(a and #a))
+    check(a[1].document == "new" and a[1].filename == "Steve Jobs - Walter Isaacson.epub", "first alias")
+    check(a[2].document == "old" and type(a[2].filename) == "nil", "null file name is " .. type(a[2].filename))
+    check(got[2].aliases == nil, "a row without aliases grew some")
+    -- The cache went through LuaSettings (a real file with --koreader) intact.
+    local cached = newClient(GOOD, nil, env.reopen(settings)):cachedList()
+    check(cached and cached[1].aliases and #cached[1].aliases == 2, "aliases not cached")
+    check(cached[1].aliases[2].document == "old" and cached[1].aliases[2].filename == nil, "cached alias")
+end)
+
+test("remove: one DELETE per alias, then the cache forgets the book", function()
+    local settings = env.newSettings()
+    newClient(GOOD, { status = 200, body = aliasBody() }, settings):fetchList()
+    local client, http = newClient(GOOD, { status = 200, body = '{"deleted":1}' }, settings)
+    local ok, info
+    client:removeDocuments({ "new", "old" }, function(o, i) ok, info = o, i end)
+    check(ok == true, "not ok")
+    check(#http.calls == 2, "expected 2 requests, got " .. #http.calls)
+    check(http.calls[1].method == "DELETE" and http.calls[1].url == "https://sync.example.test/syncs/documents/new", "first " .. tostring(http.calls[1].url))
+    check(http.calls[2].method == "DELETE" and http.calls[2].url == "https://sync.example.test/syncs/documents/old", "second " .. tostring(http.calls[2].url))
+    check(http.calls[1].headers["x-auth-key"] == KEY and http.calls[1].headers["accept"] == Client.ACCEPT, "auth headers")
+    check(http.calls[1].body == nil and http.calls[1].headers["content-type"] == nil, "a DELETE has no body")
+    check(#info.removed == 2 and #info.failed == 0 and info.message == nil, "info")
+    local cached = client:cachedList()
+    check(#cached == 1 and cached[1].document == "solo", "cache still holds the removed book")
+end)
+
+test("remove: a key already gone (deleted 0) still counts as removed", function()
+    local client = newClient(GOOD, { status = 200, body = '{"deleted":0}' })
+    local ok
+    client:removeDocuments({ "gone" }, function(o) ok = o end)
+    check(ok == true, "idempotent delete reported a failure")
+end)
+
+test("remove: a failed DELETE keeps the book and says so", function()
+    local settings = env.newSettings()
+    newClient(GOOD, { status = 200, body = aliasBody() }, settings):fetchList()
+    local client, http = newClient(GOOD, function(req)
+        if req.url:find("/old$") then return { status = 500, body = "oops" } end
+        return { status = 200, body = '{"deleted":1}' }
+    end, settings)
+    local ok, info
+    client:removeDocuments({ "new", "old" }, function(o, i) ok, info = o, i end)
+    check(ok == false, "reported ok")
+    check(#http.calls == 2, "stopped after the failure")
+    check(info.message == Client.MSG_REMOVE_FAILED and info.status == 500, "message or status")
+    check(#info.removed == 1 and info.failed[1] == "old", "removed/failed lists")
+    check(#client:cachedList() == 2, "a partly removed book left the cache")
+    local timeout = newClient(GOOD, { err = "timeout" })
+    timeout:removeDocuments({ "x" }, function(o, i) ok, info = o, i end)
+    check(ok == false and info.err == "timeout" and info.message == Client.MSG_REMOVE_FAILED, "timeout")
+end)
+
+test("remove: no login, no request", function()
+    local client, http = newClient(nil)
+    local ok, info
+    client:removeDocuments({ "a" }, function(o, i) ok, info = o, i end)
+    check(ok == false and info.reason == "login" and info.message == Client.MSG_LOGIN, "info")
+    check(#http.calls == 0, "made a request")
+end)
+
 test("push: PUT /syncs/documents with document and filename", function()
     local client, http = newClient(copy(GOOD, { custom_server = "https://sync.example.test" }), { status = 200, body = "{}" })
     local pushed
