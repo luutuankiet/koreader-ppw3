@@ -1,12 +1,12 @@
 ---
 title: Synced reading list plugin
-covers: where the synced reading list sets the progress sync device id from the Kindle serial, fetches the server list, maps books to local files, builds rows, filters and searches, shows the long-press pop-up, and opens a book at its synced position
-verified: 2026-10-30
+covers: where the synced reading list sets the progress sync device id from the Kindle serial, fetches the server list, maps books to local files under any of their merged file names, builds rows, filters and searches, refreshes, shows the long-press pop-up, removes a book from the list, and opens a book at its synced position
+verified: 2026-10-31
 ---
 
 # Synced reading list
 
-`syncedhistory.koplugin/` adds one main-menu entry, "Synced reading list". It shows every book with progress on the progress sync server that KOReader's built-in progress sync (`kosync.koplugin`) is logged into, using that plugin's server and login. The server needs two extra routes: `GET /syncs/list` and `PUT /syncs/documents`. Each module except `main.lua` takes its KOReader dependencies as arguments, so its test runs under plain `luajit` outside KOReader.
+`syncedhistory.koplugin/` adds one main-menu entry, "Synced reading list". It shows every book with progress on the progress sync server that KOReader's built-in progress sync (`kosync.koplugin`) is logged into, using that plugin's server and login. The server needs three extra routes: `GET /syncs/list` (a book saved under several file names comes back as one item whose `aliases` list every key, newest first), `PUT /syncs/documents` and `DELETE /syncs/documents/{document}`. Each module except `main.lua` takes its KOReader dependencies as arguments, so its test runs under plain `luajit` outside KOReader.
 
 ```mermaid
 flowchart LR
@@ -24,18 +24,18 @@ Line numbers below are a starting point, not an address: jump roughly there, con
 |---|---|---|
 | `syncedhistory.koplugin/main.lua` | 32-47 | at file load, before any plugin instance: the progress sync device id from the Kindle serial (`syncedhistory_serial_path` in the reader settings points at a fake serial on the emulator) |
 | same | 49-127 | one settings object, the local index and the client, all kept for the whole run; reading the progress sync login (live table, `settings/kosync.lua`, or the global `kosync` key up to v2024.11) |
-| same | 142-202 | `pullProgress`, `onReaderReady` (pushes the file name, pulls once for a book opened from the list), `openRow` |
-| same | 204-241 | "show books not on this device" setting (`show_missing`, per device) and `redrawList` |
-| same | 243-339 | search dialog, title-bar menu, long-press pop-up with `Open` only for books on this device |
-| same | 341-392 | `showList` (cached copy at once, then the server's copy) and the menu entry |
-| `syncedhistory.koplugin/syncedhistory_listview.lua` | 72-148 | `ListView.deviceLabel` (model plus last 4 characters of the device id), `ListView.rows`: newest first, percentage, device, on-device or missing |
-| same | 150-222 | `ListView.view` (filter, then case-insensitive plain-text search), `subtitle`, `emptyText` |
-| same | 224-end | `ListView.details`: the long-press text |
-| `syncedhistory.koplugin/syncedhistory_client.lua` | 94-123 | credentials from the progress sync login, request headers |
-| same | 141-244 | cached list, `fetchList`, `pushDocument` (tells the server a book's file name) |
+| same | 143-205 | `pullProgress`, `onReaderReady` (pushes the file name, pulls once for a book opened from the list), `openRow` (opens whichever alias is local) |
+| same | 207-279 | "show books not on this device" setting (`show_missing`, per device), `redrawList`, `fetchIntoList`, `refreshList` (forced local rescan, then a refetch) |
+| same | 280-411 | search dialog, title-bar menu (filter, search, Refresh), `removeRow` (confirm, one DELETE per alias, refetch), long-press pop-up with `Open` only for books on this device and `Remove from list` for every book |
+| same | 413-end | `showList` (cached copy at once, then the server's copy) and the menu entry |
+| `syncedhistory.koplugin/syncedhistory_listview.lua` | 78-208 | `ListView.deviceLabel` (model plus last 4 characters of the device id), `ListView.aliases` and `ListView.localMatch` (a row is local when any alias key is in the index), `ListView.rows`: newest first, percentage, device, on-device or missing |
+| same | 210-282 | `ListView.view` (filter, then case-insensitive plain-text search), `subtitle`, `emptyText` |
+| same | 284-end | `ListView.details`: the long-press text; `ListView.removeText`: the remove confirm |
+| `syncedhistory.koplugin/syncedhistory_client.lua` | 99-158 | credentials from the progress sync login, request headers, `cleanRow` (no JSON null in the cache, `aliases` included) |
+| same | 160-end | cached list, `fetchList`, `pushDocument` (tells the server a book's file name), `removeDocuments` (one DELETE per key; the cache drops the book only when every key went) |
 | `syncedhistory.koplugin/syncedhistory_http.lua` | 91-end | request without blocking the UI, polled with `scheduleIn` |
 | `syncedhistory.koplugin/syncedhistory_deviceid.lua` | 33-end | `derive` (uppercase md5 of `kosync:` plus the serial), `apply` (writes and flushes only when it differs; never logs the serial) |
-| `syncedhistory.koplugin/syncedhistory_localindex.lua` | 116-200 | scan of the home folder, `rescan` at most once per run, `lookup` of a sync key |
+| `syncedhistory.koplugin/syncedhistory_localindex.lua` | 116-200 | scan of the home folder, `rescan` (automatic at most once per run on a lookup miss; the list's Refresh calls it directly), `lookup` of a sync key |
 
 ## Tests
 

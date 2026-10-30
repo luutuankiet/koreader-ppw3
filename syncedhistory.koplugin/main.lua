@@ -6,6 +6,7 @@ the built-in progress sync to pull its latest position.
 ]]
 
 local ButtonDialog = require("ui/widget/buttondialog")
+local ConfirmBox = require("ui/widget/confirmbox")
 local DataStorage = require("datastorage")
 local DocumentRegistry = require("document/documentregistry")
 local Event = require("ui/event")
@@ -183,8 +184,10 @@ local function openBook(ui, path)
 end
 
 function SyncedHistory:openRow(menu, row)
-    -- Look again: the file may have moved since the list was built.
-    local path = row.document and getIndex():lookup(row.document)
+    -- Look again: the file may have moved since the list was built. Any of
+    -- the book's file names counts; the built-in sync then pulls by the
+    -- opened file's own key.
+    local path = row.document and ListView.localMatch(row, function(key) return getIndex():lookup(key) end)
     if not path then
         logger.info("syncedhistory: not on this device:", row.document)
         UIManager:show(InfoMessage:new{ text = _(ListView.NOT_FOUND), timeout = 3 })
@@ -222,9 +225,10 @@ end
 -- Each row's tap goes through item.callback (Menu:onMenuChoice). The menu
 -- has no close_callback, so a tap never closes it by itself: a missing book
 -- leaves the list open, and openRow closes it before opening a book.
--- state: rows (from buildRows), status (subtitle tail), empty (text when the
--- server list is empty or could not be fetched), query (the search, nil when
--- none; it lives only as long as this list and is never saved).
+-- state: list (the server list or its cached copy), rows (from buildRows),
+-- status (subtitle tail), empty (text when the server list is empty or could
+-- not be fetched), query (the search, nil when none; it lives only as long as
+-- this list and is never saved).
 function SyncedHistory:redrawList(menu, state)
     local view = ListView.view(state.rows, { show_missing = showMissing(), query = state.query })
     local items = {}
@@ -238,6 +242,39 @@ function SyncedHistory:redrawList(menu, state)
     end
     -- itemnumber nil: switchItemTable goes back to page 1.
     menu:switchItemTable(nil, items, nil, nil, ListView.subtitle(view, { status = state.status, gettext = _ }))
+end
+
+-- Fetch the server list into the open list screen. The cached copy is shown
+-- until the answer comes; a failed fetch keeps it and says so.
+function SyncedHistory:fetchIntoList(menu, state)
+    state.status = _(ListView.SYNCING)
+    self:redrawList(menu, state)
+    getClient():fetchList(function(list, info)
+        if not UIManager:isWidgetShown(menu) then return end
+        if info.fresh then
+            state.status = _(ListView.SYNCED)
+            state.empty = _(ListView.EMPTY)
+        else
+            state.status = _(info.message)
+            state.empty = _(info.message)
+            if info.reason then
+                -- Not logged in, or the wrong matching method: say so plainly.
+                UIManager:show(InfoMessage:new{ text = _(info.message) })
+            end
+        end
+        state.list = list
+        state.rows = buildRows(list)
+        self:redrawList(menu, state)
+    end)
+end
+
+-- "Refresh": look for books copied in since the last scan, whatever the
+-- once-per-run limit says, then fetch the server list again.
+function SyncedHistory:refreshList(menu, state)
+    local keys = getIndex():rescan()
+    logger.info("syncedhistory: refresh, local books:", keys)
+    state.rows = buildRows(state.list)
+    self:fetchIntoList(menu, state)
 end
 
 -- KOReader's on-screen keyboard dialog. Search sets the query and redraws;
@@ -270,8 +307,8 @@ function SyncedHistory:showSearch(menu, state)
     dialog:onShowKeyboard()
 end
 
--- The title-bar menu: show or hide books not on this device, search, and
--- clear the search while one is active.
+-- The title-bar menu: show or hide books not on this device, search, clear
+-- the search while one is active, and refresh.
 function SyncedHistory:showListMenu(menu, state)
     local dialog
     local buttons = {
@@ -305,15 +342,44 @@ function SyncedHistory:showListMenu(menu, state)
             end,
         } })
     end
+    table.insert(buttons, { {
+        text = _(ListView.REFRESH),
+        align = "left",
+        callback = function()
+            UIManager:close(dialog)
+            self:refreshList(menu, state)
+        end,
+    } })
     dialog = ButtonDialog:new{ buttons = buttons }
     UIManager:show(dialog)
 end
 
+-- "Remove from list": confirm, delete every key of the book on the server,
+-- then fetch the list again. A failed delete keeps the row and says so.
+function SyncedHistory:removeRow(menu, state, row)
+    UIManager:show(ConfirmBox:new{
+        text = ListView.removeText(row, { gettext = _ }),
+        ok_text = _(ListView.REMOVE),
+        ok_callback = function()
+            local keys = {}
+            for i, a in ipairs(row.keys or { { document = row.document } }) do keys[i] = a.document end
+            state.status = _(ListView.REMOVING)
+            self:redrawList(menu, state)
+            getClient():removeDocuments(keys, function(ok, info)
+                if not ok then
+                    UIManager:show(InfoMessage:new{ text = _(info.message) })
+                end
+                if UIManager:isWidgetShown(menu) then self:fetchIntoList(menu, state) end
+            end)
+        end,
+    })
+end
+
 -- A long press on a row: the whole name (the list cuts it to one line) and
 -- the rest of what the server knows. Open only for a book on this device,
--- through the same path as a tap. The empty-list row has no document and no
--- pop-up.
-function SyncedHistory:showDetails(menu, row)
+-- through the same path as a tap; "Remove from list" for every book. The
+-- empty-list row has no document and no pop-up.
+function SyncedHistory:showDetails(menu, state, row)
     if not (row and row.document) then return end
     local dialog
     local buttons = {}
@@ -326,6 +392,13 @@ function SyncedHistory:showDetails(menu, row)
             end,
         }
     end
+    buttons[#buttons + 1] = {
+        text = _(ListView.REMOVE),
+        callback = function()
+            UIManager:close(dialog)
+            self:removeRow(menu, state, row)
+        end,
+    }
     buttons[#buttons + 1] = {
         text = _("Close"),
         callback = function() UIManager:close(dialog) end,
@@ -340,8 +413,10 @@ end
 
 --- The list screen: the cached copy at once, the server's copy when it comes.
 function SyncedHistory:showList()
+    local cached = getClient():cachedList()
     local state = {
-        rows = buildRows(getClient():cachedList()),
+        list = cached,
+        rows = buildRows(cached),
         status = _(ListView.SYNCING),
         empty = _(ListView.SYNCING),
     }
@@ -360,27 +435,12 @@ function SyncedHistory:showList()
     menu.onLeftButtonTap = function() self:showListMenu(menu, state) end
     -- MenuItem calls self.menu:onMenuHold(item, pos); the default does nothing.
     menu.onMenuHold = function(_menu, item)
-        self:showDetails(menu, item)
+        self:showDetails(menu, state, item)
         return true
     end
     self:redrawList(menu, state)
     UIManager:show(menu)
-    getClient():fetchList(function(list, info)
-        if not UIManager:isWidgetShown(menu) then return end
-        if info.fresh then
-            state.status = _(ListView.SYNCED)
-            state.empty = _(ListView.EMPTY)
-        else
-            state.status = _(info.message)
-            state.empty = _(info.message)
-            if info.reason then
-                -- Not logged in, or the wrong matching method: say so plainly.
-                UIManager:show(InfoMessage:new{ text = _(info.message) })
-            end
-        end
-        state.rows = buildRows(list)
-        self:redrawList(menu, state)
-    end)
+    self:fetchIntoList(menu, state)
 end
 
 function SyncedHistory:addToMainMenu(menu_items)
