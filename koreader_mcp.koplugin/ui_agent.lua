@@ -227,7 +227,8 @@ function M.snapshot()
     end
     return {
         snapshot = id,
-        window = tostring(top.name or top.title or (top.covers_fullscreen and "fullscreen") or "window"),
+        -- clip: a dialog's title can hold newlines, and this goes on one line.
+        window = clip(tostring(top.name or top.title or (top.covers_fullscreen and "fullscreen") or "window")) or "window",
         total = #lines,
         nodes = lines,
     }
