@@ -42,7 +42,7 @@ Simply true, and expensive to re-derive.
 
 | page | summary | verified |
 |---|---|---|
-| [Gateway configuration](../../../docs/reference/configuration.md) | environment variables read by the gateway container and where they are set | 2026-10-28 |
+| [Gateway configuration](../../../docs/reference/configuration.md) | environment variables read by the gateway container and where they are set | 2026-10-31 |
 | [Kindle SSH access and ports](../../../docs/reference/kindle-ssh-access.md) | the two SSH servers on a jailbroken Paperwhite 3, which survives a KOReader restart, and which ports matter | 2026-10-28 |
 
 ## Decisions

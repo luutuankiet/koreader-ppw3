@@ -17,7 +17,7 @@ Workspace for developing KOReader plugins for Kindle Paperwhite 3 devices, plus 
 - `rssreader.koplugin/` - FreshRSS reader plugin (separate repo)
 - `syncedhistory.koplugin/` - synced reading list plugin (map: `docs/architecture/synced-reading-list.md`; each module has a `test_*.lua`, run with `luajit test_<name>.lua`, or `--koreader` from a KOReader install folder for the real md5 and lfs)
 - `emulator/` - KOReader `v2026.07.1` in Docker, registered with the gateway as device `emu` (`emulator/README.md`); its `state/` and `library/` are gitignored
-- `scripts/` - shell deploy fallbacks and the docs index generator
+- `scripts/` - shell deploy fallbacks, `publish.sh` (plugin packages the gateway serves at `/pkg/`) and the docs index generator
 - `kosettings_backup/` - gitignored device settings backup
 
 ## Build and check
