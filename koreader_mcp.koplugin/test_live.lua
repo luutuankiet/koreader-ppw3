@@ -86,6 +86,25 @@ test("start says hello, then stop leaves no socket and no timer", function()
     eq(#w.timers, 0); eq(sock.closed, true); eq(w.ended[1], "user"); eq(w.live:isActive(), false)
 end)
 
+test("a deferred call replies later, and not at all once its connection has gone", function()
+    local w = world(); w.live:start()
+    local pending
+    w.live.deps.deferred = { ui_act = function(_, done) pending = done end }
+    w.feed({ id = 9, method = "ui_act" })
+    w.step()
+    eq(#w.sent, 1) -- only the hello: the reply waits
+    pending({ ok = true })
+    eq(w.sent[2].id, 9); eq(w.sent[2].result.ok, true)
+    pending({ ok = false }) -- a second call to done is ignored
+    eq(#w.sent, 2)
+    w.feed({ id = 10, method = "ui_act" })
+    w.step()
+    w.read_error = "closed"
+    w.step()
+    pending({ ok = true })
+    eq(#w.sent, 2)
+end)
+
 test("a tool call is dispatched and answered with its id", function()
     local w = world(); w.live:start()
     w.feed({ type = "welcome", name = "kindle" })

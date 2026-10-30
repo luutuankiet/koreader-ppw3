@@ -337,4 +337,6 @@ function server:run_blocking()
     end
 end
 
+server.json = json
+
 return server

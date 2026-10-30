@@ -9,6 +9,7 @@ deps:
   now()                -> seconds
   json                 { encode, decode }
   dispatch(method, params) -> result, rpc_error
+  deferred             optional { method = fn(params, done) }, done(result, rpc_error) replies later
   identity()           -> { name, id_hash, koreader_version, plugin_versions }
   battery()            -> percent | nil
   on_begin(), on_end(reason)                keep WiFi and the screen up, then put them back
@@ -186,19 +187,40 @@ function Live:_handle(line)
     end
 end
 
-function Live:_call(msg)
-    self.last_command = self.deps.now()
-    local ok, result, rpc_error = pcall(self.deps.dispatch, msg.method, msg.params or {})
-    local reply = { id = msg.id }
-    if not ok then
-        reply.error = { code = -32603, message = tostring(result) }
-    elseif rpc_error then
+function Live:_reply(id, result, rpc_error)
+    local reply = { id = id }
+    if rpc_error then
         reply.error = rpc_error
     else
         reply.result = result == nil and {} or result
     end
     local sent, err = self:_send(reply)
     if not sent then self:_lost(err) end
+end
+
+function Live:_call(msg)
+    self.last_command = self.deps.now()
+    local params = msg.params or {}
+    local deferred = self.deps.deferred and self.deps.deferred[msg.method]
+    if deferred then
+        -- Replies later from a UIManager task, while this loop keeps running. A reply
+        -- whose connection has since gone is dropped: the gateway failed that call already.
+        local sock, replied = self.sock, false
+        local function done(result, rpc_error)
+            if replied then return end
+            replied = true
+            if self.sock == sock then
+                self.last_command = self.deps.now()
+                self:_reply(msg.id, result, rpc_error)
+            end
+        end
+        local ok, err = pcall(deferred, params, done)
+        if not ok then done(nil, { code = -32603, message = tostring(err) }) end
+        return
+    end
+    local ok, result, rpc_error = pcall(self.deps.dispatch, msg.method, params)
+    if not ok then rpc_error = { code = -32603, message = tostring(result) } end
+    self:_reply(msg.id, result, rpc_error)
 end
 
 -- What this device calls itself and proves itself with. The hash stands in for the serial,
