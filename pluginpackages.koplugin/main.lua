@@ -191,7 +191,11 @@ function PluginPackages:editHost()
                 callback = function()
                     local value = util.trim(dialog:getInputText())
                     UIManager:close(dialog)
-                    if value ~= "" then G_reader_settings:saveSetting(SETTING_HOST, value) end
+                    if value ~= "" then
+                        G_reader_settings:saveSetting(SETTING_HOST, value)
+                        -- Otherwise on disk only at a clean exit: a crash forgets the host.
+                        G_reader_settings:flush()
+                    end
                     self:open()
                 end,
             },
