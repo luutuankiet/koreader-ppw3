@@ -7,8 +7,8 @@
 #             or a path to a *.koplugin folder anywhere on disk.
 #   --force   replace an archive of the same version whose content changed.
 #
-# Writes <name>-<version>.tar.gz into $PKG_DIR (default
-# ~/kindle-packages/pkg, mounted read-only into the gateway container), then
+# Writes <name>-<version>.tar.gz into $PKG_DIR (default tmp/packages/pkg in
+# this repo, gitignored, mounted read-only into the gateway container), then
 # rebuilds $PKG_DIR/index.json from every archive in that folder.
 #
 # What goes into an archive:
@@ -27,7 +27,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PKG_DIR="${PKG_DIR:-$HOME/kindle-packages/pkg}"
+PKG_DIR="${PKG_DIR:-$REPO_ROOT/tmp/packages/pkg}"
 FORCE=0
 
 die() { echo "publish: $*" >&2; exit 1; }
@@ -42,7 +42,7 @@ for arg in "$@"; do
     esac
 done
 [ "${#plugins[@]}" -gt 0 ] || die "usage: publish.sh [--force] <plugin>..."
-[ -d "$PKG_DIR" ] || die "package folder $PKG_DIR does not exist (create it, or set PKG_DIR)"
+mkdir -p "$PKG_DIR" || die "cannot create package folder $PKG_DIR"
 STAGE_ROOT="$(mktemp -d)"
 trap 'rm -rf "$STAGE_ROOT"' EXIT
 
