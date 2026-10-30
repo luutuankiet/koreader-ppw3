@@ -1,181 +1,314 @@
--- KOReader MCP Server Plugin
--- Provides an HTTP+JSON-RPC server for remote device management
+--[[
+KOReader MCP plugin: the agent bridge.
 
--- Load socket for gateway registration (IP discovery)
-local socket = require("socket")
+The device dials out to the gateway and carries tool calls over that one connection
+(live.lua). There is no listening server: outside a session this plugin has no socket
+and no timer. config.lua (optional) holds device_name, gateway_host, gateway_port and
+live_mode; live_mode = "always" is the emulator, which runs a session permanently.
+]]
 
--- Try to load KOReader modules; graceful fallback for standalone testing
-local WidgetContainer
-local UIManager
-local logger_ok, logger = pcall(require, "logger")
+local DataStorage = require("datastorage")
+local Device = require("device")
+local InputDialog = require("ui/widget/inputdialog")
+local InfoMessage = require("ui/widget/infomessage")
+local LuaSettings = require("luasettings")
+local NetworkMgr = require("ui/network/manager")
+local UIManager = require("ui/uimanager")
+local WidgetContainer = require("ui/widget/container/widgetcontainer")
+local lfs = require("libs/libkoreader-lfs")
+local logger = require("logger")
+local _ = require("gettext")
 
-local ok_wc
-ok_wc, WidgetContainer = pcall(require, "ui/widget/container/widgetcontainer")
-if not ok_wc then WidgetContainer = nil end
+local DEFAULT_HOST = "192.168.1.19"
+local DEFAULT_PORT = 9990
 
-local ok_ui
-ok_ui, UIManager = pcall(require, "ui/uimanager")
-if not ok_ui then UIManager = nil end
+local function log(msg) logger.info("[MCP] " .. msg) end
 
-local log
-if logger_ok then
-    log = function(msg) logger.info("[MCP] " .. msg) end
-else
-    log = function(msg) print("[MCP] " .. msg) end
-end
-
--- Load server module from plugin directory
+-- KOReader rebuilds the plugin instance on every file manager / reader switch, so the
+-- session belongs to the loaded file, and onCloseWidget must not stop it.
+local session
+local config = {}
+local settings
 local plugin_dir
-if WidgetContainer then
-    -- Will be set in init
-    plugin_dir = nil
-else
-    -- Standalone mode: use current directory
-    plugin_dir = "."
+local timers_scheduled = 0
+
+local function readSerial()
+    local f = io.open("/proc/usid", "r")
+    if not f then return nil end
+    local serial = f:read("*l")
+    f:close()
+    return serial and serial:gsub("%s+", "") or nil
 end
 
-local base_class = WidgetContainer or {}
-local KOReaderMCP = WidgetContainer and WidgetContainer:extend{} or {}
+local function pluginVersions()
+    local versions = {}
+    local parent = plugin_dir:match("^(.*)/[^/]+/?$")
+    if not parent then return versions end
+    local ok = pcall(function()
+        for entry in lfs.dir(parent) do
+            local name = entry:match("^(.+)%.koplugin$")
+            if name then
+                local loaded, meta = pcall(dofile, parent .. "/" .. entry .. "/_meta.lua")
+                if loaded and type(meta) == "table" and meta.version then
+                    versions[name] = tostring(meta.version)
+                end
+            end
+        end
+    end)
+    if not ok then log("could not list plugin versions") end
+    return versions
+end
 
-KOReaderMCP.name = "koreader_mcp"
-KOReaderMCP.is_doc_only = false
+local function identity()
+    local Live = require("live")
+    local sha2 = require("ffi/sha2")
+    local id = Live.identity{
+        serial = readSerial(),
+        config_name = config.device_name,
+        sha256 = sha2.sha256,
+    }
+    local names = settings:readSetting("names") or {}
+    id.name = names[id.id_hash] or id.name
+    local ok, version = pcall(function() return require("version"):getCurrentRevision() end)
+    id.koreader_version = ok and version or "unknown"
+    id.plugin_versions = pluginVersions()
+    return id
+end
+
+local function connect(host, port)
+    local sock = require("socket").tcp()
+    sock:settimeout(5)
+    local ok, err = sock:connect(host, port)
+    if not ok then
+        sock:close()
+        return nil, err
+    end
+    -- A child of run_command must not inherit the connection: the detached restart shell
+    -- would hold it open and the gateway would never see this device go offline.
+    local ok_ffi, ffi = pcall(require, "ffi")
+    if ok_ffi then
+        ffi.cdef[[int fcntl(int fd, int cmd, ...);]]
+        ffi.C.fcntl(sock:getfd(), 2, ffi.cast("int", 1)) -- F_SETFD=2, FD_CLOEXEC=1
+    end
+    sock:setoption("tcp-nodelay", true)
+    sock:settimeout(0)
+    return sock
+end
+
+-- 60s pings sit below KOReader's WiFi activity threshold, so its auto-off would cut the
+-- session. Pause the check rather than flip the setting, which a crash would persist.
+local function pauseWifiCheck()
+    local ok, listener = pcall(require, "ui/network/networklistener")
+    if ok and listener._unscheduleActivityCheck then pcall(listener._unscheduleActivityCheck, listener) end
+end
+
+local function resumeWifiCheck()
+    local ok, listener = pcall(require, "ui/network/networklistener")
+    if ok and listener._scheduleActivityCheck
+        and G_reader_settings:isTrue("auto_disable_wifi") and NetworkMgr:isWifiOn() then
+        pcall(listener._scheduleActivityCheck, listener)
+    end
+end
+
+local function setScreenSaverHeld(held)
+    if not Device:isKindle() then return end
+    if not held and require("pluginshare").keepalive then return end
+    os.execute("lipc-set-prop com.lab126.powerd preventScreenSaver " .. (held and "1" or "0"))
+end
+
+local function gatewayAddress()
+    local stored = settings:readSetting("gateway") or {}
+    return stored.host or config.gateway_host or DEFAULT_HOST,
+        tonumber(stored.port or config.gateway_port) or DEFAULT_PORT
+end
+
+local function newSession()
+    local Live = require("live")
+    local handlers = require("handlers")
+    local server_json = require("server").json
+    local ui_agent = require("ui_agent")
+    local host, port = gatewayAddress()
+    return Live.new({
+        connect = connect,
+        schedule = function(seconds, fn)
+            timers_scheduled = timers_scheduled + 1
+            -- Our own timers are never "pending UI work" for ui_act's idle wait.
+            ui_agent.own_tasks[fn] = true
+            UIManager:scheduleIn(seconds, fn)
+            return fn
+        end,
+        unschedule = function(fn) UIManager:unschedule(fn) end,
+        now = function() return require("socket").gettime() end,
+        json = {
+            encode = server_json.encode,
+            decode = function(line) return (server_json._parse(line, 1)) end,
+        },
+        dispatch = handlers.dispatch,
+        deferred = handlers.deferred,
+        identity = identity,
+        battery = function()
+            local ok, capacity = pcall(function() return Device:getPowerDevice():getCapacity() end)
+            return ok and capacity or nil
+        end,
+        on_begin = function()
+            setScreenSaverHeld(true)
+            pauseWifiCheck()
+            -- A config-driven session starts by itself and leaves no state behind.
+            if config.live_mode ~= "always" then
+                settings:saveSetting("session_open", true)
+                settings:flush()
+            end
+        end,
+        on_end = function(reason)
+            setScreenSaverHeld(false)
+            resumeWifiCheck()
+            settings:saveSetting("session_open", false)
+            settings:flush()
+            log("session over (" .. tostring(reason) .. "), timers scheduled by this plugin: " .. timers_scheduled)
+        end,
+        log = log,
+    }, { host = host, port = port, always = config.live_mode == "always" })
+end
+
+local function startSession()
+    if session and session:isActive() then return end
+    session = newSession()
+    session:start()
+end
+
+local function stopSession(reason)
+    if session then session:stop(reason) end
+end
+
+local function restartIfActive()
+    if session and session:isActive() then
+        stopSession("settings changed")
+        startSession()
+    end
+end
+
+local KOReaderMCP = WidgetContainer:extend{
+    name = "koreader_mcp",
+    is_doc_only = false,
+}
 
 function KOReaderMCP:init()
-    if self.path then
-        plugin_dir = self.path
+    if self.ui and self.ui.menu then self.ui.menu:registerToMainMenu(self) end
+    if settings then return end -- only instance rebuilds get past here from now on
+
+    plugin_dir = self.path or "plugins/koreader_mcp.koplugin"
+    local pattern = plugin_dir .. "/?.lua"
+    if not package.path:find(pattern, 1, true) then
+        package.path = pattern .. ";" .. package.path
     end
-    self.port = 8888
-    self.gateway_url = nil  -- Set to gateway URL to enable registration
+    local ok, loaded = pcall(dofile, plugin_dir .. "/config.lua")
+    if ok and type(loaded) == "table" then config = loaded end
+    settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/koreader_mcp.lua")
 
-    -- Load config.lua if present (created by deploy script)
-    local config_ok, config = pcall(function()
-        return dofile((plugin_dir or ".") .. "/config.lua")
-    end)
-    if config_ok and config then
-        if config.gateway_url then
-            self.gateway_url = config.gateway_url
-            log("Gateway URL from config: " .. self.gateway_url)
-        end
-        -- Optional listen port; the emulator sets 8889 because 8888 is taken on its host.
-        local port = tonumber(config.port)
-        if port then
-            self.port = port
-            log("Port from config: " .. self.port)
-        elseif config.port ~= nil then
-            log("Ignoring invalid port in config: " .. tostring(config.port))
-        end
-        if config.device_name then
-            self.device_name = config.device_name
-            log("Device name from config: " .. self.device_name)
-        end
-        -- Optional address sent to the gateway instead of the discovered local IP.
-        -- The emulator sets its host's tailnet name: its discovered IP is a LAN address.
-        if type(config.advertise_host) == "string" and config.advertise_host ~= "" then
-            self.advertise_host = config.advertise_host
-            log("Advertise host from config: " .. self.advertise_host)
-        end
-    end
-
-    -- Add plugin dir to package path so we can require our modules
-    if plugin_dir then
-        local sep = package.config:sub(1,1)
-        local pattern = plugin_dir .. sep .. "?.lua"
-        if not package.path:find(pattern, 1, true) then
-            package.path = pattern .. ";" .. package.path
-        end
-    end
-
-    -- Ensure firewall allows connections to our port (persists across KOReader restarts)
-    -- Use full path: /usr/sbin/iptables not in default PATH on some Kindle firmware
-    os.execute("/usr/sbin/iptables -C INPUT -p tcp --dport " .. self.port .. " -j ACCEPT 2>/dev/null || /usr/sbin/iptables -I INPUT -p tcp --dport " .. self.port .. " -j ACCEPT")
-
-    local srv_module = require("server")
-    self.server = srv_module.new(self.port)
-    self.server:start()
-
-    if UIManager then
-        self:schedule_poll()
-        log("Plugin initialized with UIManager polling")
+    -- session_open still set means KOReader was killed mid-session, as restart_koreader
+    -- does: pick the session back up so the agent gets the device back.
+    if config.live_mode == "always" or settings:isTrue("session_open") then
+        UIManager:nextTick(startSession)
     else
-        log("Plugin initialized (no UIManager, use run_blocking for standalone)")
+        log("live mode off, timers scheduled by this plugin: " .. timers_scheduled)
     end
-end
-
-function KOReaderMCP:schedule_poll()
-    if not UIManager then return end
-    if not self.server or not self.server.running then return end
-
-    local function poll()
-        if self.server and self.server.running then
-            self.server:poll()
-            self:schedule_poll()
-        end
-    end
-    -- The server's own poll is never "pending UI work" for ui_act's idle wait.
-    require("ui_agent").own_tasks[poll] = true
-    UIManager:scheduleIn(0.5, poll)
-end
-
-function KOReaderMCP:registerWithGateway()
-    if not self.gateway_url then return end
-
-    local http = require("socket.http")
-    local ltn12 = require("ltn12")
-
-    -- Get device name and IP
-    local device_name = self.device_name or ("kindle-" .. (os.getenv("HOSTNAME") or "unknown"))
-    local ip = self.advertise_host or self:getLocalIP()
-    if not ip then
-        log("Cannot determine local IP, skipping registration")
-        return
-    end
-
-    local body = '{"name":"' .. device_name .. '","ip":"' .. ip .. '","port":' .. self.port
-        .. ',"tools":["read_files","run_command","device_status"]}'
-
-    log("Registering with gateway: " .. self.gateway_url .. " as " .. device_name .. " (" .. ip .. ":" .. self.port .. ")")
-
-    local resp_body = {}
-    local result, code = http.request({
-        url = self.gateway_url .. "/register",
-        method = "POST",
-        headers = {
-            ["Content-Type"] = "application/json",
-            ["Content-Length"] = tostring(#body),
-        },
-        source = ltn12.source.string(body),
-        sink = ltn12.sink.table(resp_body),
-    })
-
-    if result and code == 200 then
-        log("Registered with gateway successfully")
-    else
-        log("Gateway registration failed: " .. tostring(code))
-    end
-end
-
-function KOReaderMCP:getLocalIP()
-    -- Connect to a non-routable address to discover local IP
-    local udp = socket.udp()
-    udp:setpeername("8.8.8.8", 80)
-    local ip = udp:getsockname()
-    udp:close()
-    return ip
 end
 
 function KOReaderMCP:onNetworkConnected()
-    log("Network connected")
-    self:registerWithGateway()
-end
-
-function KOReaderMCP:onNetworkDisconnected()
-    log("Network disconnected")
-end
-
-function KOReaderMCP:onCloseWidget()
-    if self.server then
-        self.server:stop()
+    if session and session:isActive() then
+        pauseWifiCheck()
+        session:networkUp()
     end
+end
+
+function KOReaderMCP:onExit()
+    stopSession("KOReader exiting")
+end
+
+function KOReaderMCP:addToMainMenu(menu_items)
+    menu_items.koreader_mcp = {
+        text = _("Agent bridge"),
+        sorting_hint = "network",
+        sub_item_table = {
+            {
+                text = _("Live mode"),
+                checked_func = function() return session ~= nil and session:isActive() end,
+                callback = function()
+                    if session and session:isActive() then
+                        stopSession("turned off in the menu")
+                    else
+                        NetworkMgr:runWhenOnline(startSession)
+                    end
+                end,
+            },
+            {
+                text = _("Rename device"),
+                keep_menu_open = true,
+                callback = function() self:showRename() end,
+            },
+            {
+                text = _("Gateway address"),
+                keep_menu_open = true,
+                callback = function() self:showGatewayAddress() end,
+            },
+        },
+    }
+end
+
+local function promptDialog(title, value, on_save)
+    local dialog
+    dialog = InputDialog:new{
+        title = title,
+        input = value,
+        buttons = {{
+            {
+                text = _("Cancel"),
+                id = "close",
+                callback = function() UIManager:close(dialog) end,
+            },
+            {
+                text = _("Save"),
+                is_enter_default = true,
+                callback = function()
+                    local text = dialog:getInputText()
+                    UIManager:close(dialog)
+                    on_save(text)
+                end,
+            },
+        }},
+    }
+    UIManager:show(dialog)
+    dialog:onShowKeyboard()
+end
+
+function KOReaderMCP:showRename()
+    local id = identity()
+    promptDialog(_("Device name"), id.name, function(name)
+        if not require("live").validName(name) then
+            UIManager:show(InfoMessage:new{ text = _("Use up to 32 letters, digits, dots, dashes or underscores.") })
+            return
+        end
+        -- Keyed by the hash, so a settings backup restored on another device does not rename it.
+        local names = settings:readSetting("names") or {}
+        names[id.id_hash] = name
+        settings:saveSetting("names", names)
+        settings:flush()
+        restartIfActive()
+    end)
+end
+
+function KOReaderMCP:showGatewayAddress()
+    local host, port = gatewayAddress()
+    promptDialog(_("Gateway address (host:port)"), host .. ":" .. port, function(text)
+        local new_host, new_port = text:match("^([%w%.%-]+):(%d+)$")
+        if not new_host then
+            UIManager:show(InfoMessage:new{ text = _("Use host:port, for example 192.168.1.19:9990.") })
+            return
+        end
+        settings:saveSetting("gateway", { host = new_host, port = tonumber(new_port) })
+        settings:flush()
+        restartIfActive()
+    end)
 end
 
 return KOReaderMCP

@@ -49,15 +49,14 @@ seed_settings() {
 }
 
 # Rewritten before every launch: a gateway deploy of koreader_mcp must not
-# leave the emulator on the Kindle's default port (8888 is taken on the host).
+# take the emulator out of its permanent live mode.
 write_mcp_config() {
     {
         echo "return {"
-        echo "    port = ${MCP_PORT:-8889},"
+        echo "    live_mode = \"${MCP_LIVE_MODE:-always}\","
         echo "    device_name = \"${MCP_DEVICE_NAME:-emu}\","
-        [ -n "${MCP_GATEWAY_URL:-}" ] && echo "    gateway_url = \"${MCP_GATEWAY_URL}\","
-        # The address the gateway is told to call back; unset = koreader_mcp's discovered IP.
-        [ -n "${MCP_ADVERTISE_HOST:-}" ] && echo "    advertise_host = \"${MCP_ADVERTISE_HOST}\","
+        echo "    gateway_host = \"${MCP_GATEWAY_HOST:-127.0.0.1}\","
+        echo "    gateway_port = ${MCP_GATEWAY_DEVICE_PORT:-9990},"
         echo "}"
     } > "$MCP_DIR/config.lua"
 }
