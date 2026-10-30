@@ -12,8 +12,8 @@ Workspace for developing KOReader plugins for Kindle Paperwhite 3 devices, plus 
 
 ## Layout
 
-- `koreader_mcp.koplugin/` - Lua HTTP + JSON-RPC server running inside KOReader (`handlers.lua` tools, `server.lua` socket loop, `main.lua` entry and phone-home)
-- `kindle-gateway/` - Node/TypeScript MCP relay (`src/gateway-server.ts` tools, `src/device-registry.ts` in-memory registry)
+- `koreader_mcp.koplugin/` - Lua HTTP + JSON-RPC server running inside KOReader (`handlers.lua` tools, `server.lua` socket loop, `main.lua` entry and phone-home, `ui_agent.lua` widget snapshot and actions, tests with `luajit test_ui_agent.lua`)
+- `kindle-gateway/` - Node/TypeScript MCP relay (`src/gateway-server.ts` tools, `src/device-registry.ts` in-memory registry, `src/ui-snapshot.ts` snapshot formatting and stale references)
 - `rssreader.koplugin/` - FreshRSS reader plugin (separate repo)
 - `syncedhistory.koplugin/` - synced reading list plugin (map: `docs/architecture/synced-reading-list.md`; each module has a `test_*.lua`, run with `luajit test_<name>.lua`, or `--koreader` from a KOReader install folder for the real md5 and lfs)
 - `emulator/` - KOReader `v2026.07.1` in Docker, registered with the gateway as device `emu` (`emulator/README.md`); its `state/` and `library/` are gitignored
