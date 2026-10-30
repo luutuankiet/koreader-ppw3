@@ -32,17 +32,19 @@ Line numbers below are a starting point, not an address: jump roughly there, con
 | file | lines | what lives there |
 |---|---|---|
 | `kindle-gateway/src/gateway-server.ts` | 1-35 | env (`PLUGINS_SRC`, `EINK_DELAY`) and screenshot resize |
-| same | 54-215 | `/health` and tool definitions (19 tools) |
-| same | 220-241 | stateless MCP transport on `/mcp` |
-| same | 252-422 | `forwardToolCall`, `forwardWithScreenshot`, `uiCall`, `captureScreenshotTool` |
-| same | 423-458 | `restartKoreader` |
-| same | 461-576 | `deployPlugin` (see the deploy pipeline page) |
+| same | 56-235 | `/health` and tool definitions (21 tools) |
+| same | 241-262 | stateless MCP transport on `/mcp` |
+| same | 273-469 | `forwardToolCall`, `forwardWithScreenshot`, `uiCall`, diagnostics tools, `captureScreenshotTool` |
+| same | 470-507 | `restartKoreader` |
+| same | 508-625 | `deployPlugin` (see the deploy pipeline page) |
 | `kindle-gateway/src/device-link.ts` | whole file | one device connection: framing, reply routing, ping, silence timer, hello; `startDeviceListener` |
 | `kindle-gateway/src/device-registry.ts` | whole file | connected devices, in memory; `attach`, `waitForConnection` |
 | `koreader_mcp.koplugin/handlers.lua` | whole file | one `handlers.<tool>` per tool, `dispatch` at the end |
 | `koreader_mcp.koplugin/live.lua` | whole file | session state machine, with everything device-specific injected, tested by `test_live.lua` on plain luajit |
-| `koreader_mcp.koplugin/main.lua` | 62-171 | what `live.lua` is given: identity, connect, screen saver, WiFi check |
-| same | 195-312 | plugin init, resume, menu |
+| `koreader_mcp.koplugin/main.lua` | 65-174 | what `live.lua` is given: identity, connect, screen saver, WiFi check |
+| same | 198-228, 295-395 | plugin init, resume, menu |
+| same | 229-294 | Send diagnostics: inbox address, manifest info, build and upload |
+| `koreader_mcp.koplugin/diagnostics.lua` | whole file | bundle build, redaction, log offset, upload; tested by `test_diagnostics.lua` |
 | `koreader_mcp.koplugin/server.lua` | whole file | supplies the JSON codec; its HTTP listener is no longer started |
 
 ## Tool groups
@@ -51,6 +53,15 @@ Line numbers below are a starting point, not an address: jump roughly there, con
 - UI (each returns a screenshot with the result): `get_current_view`, `get_menu_items`, `select_menu_item`, `go_back`, `close_top_widget`, `send_event`
 - Snapshot and input: `snapshot`, `tap`, `hold`, `tap_text`, `type`, `action`
 - Device management: `screenshot`, `restart_koreader`, `deploy_plugin`
+- Diagnostics, read from the inbox folder so they work while the device is offline: `list_diagnostics`, `read_diagnostics` (`kindle-gateway/src/diagnostics.ts`)
+
+## Send diagnostics
+
+A menu button (Tools, "Send diagnostics") in `koreader_mcp.koplugin` that works with live mode off. 0.5 s after the tap, `diagnostics.lua` builds one `.tar.gz` (`manifest.json` with versions, `crash.log` lines since the last send, `snapshot.json`, `screenshot.png`) and PUTs it over HTTP to `/inbox/<device name>/<UTC stamp>.tar.gz` on the gateway host, port 9999 (`inbox_url` in `<settings>/koreader_mcp.lua` or `config.lua` replaces the whole address).
+
+- The `crash.log` offset is kept in `<settings>/koreader_mcp_diagnostics_offset.txt`, never in `settings.reader.lua`, and moves only after a 201, so a failed send repeats its lines.
+- Text parts pass `redact()`: the `/proc/usid` serial, `password=`/`token=`-style values, `user:pass@` in URLs, `Authorization` and `Cookie`. Input field text in the snapshot is dropped. The screenshot cannot be filtered.
+- The bundle is built with the shell's `tar -czf` into `/tmp`.
 
 ## Screenshot in every UI response
 

@@ -21,6 +21,9 @@ local _ = require("gettext")
 
 local DEFAULT_HOST = "192.168.1.19"
 local DEFAULT_PORT = 9990
+-- The gateway's HTTP port, where /inbox/ takes diagnostics bundles. Not the live
+-- connection: a bundle must reach the gateway with live mode off.
+local DEFAULT_HTTP_PORT = 9999
 
 local function log(msg) logger.info("[MCP] " .. msg) end
 
@@ -221,6 +224,74 @@ function KOReaderMCP:onNetworkConnected()
     end
 end
 
+-- Follows the gateway host set in the menu. inbox_url (settings, then config.lua)
+-- replaces the whole address, for a gateway whose HTTP port is not 9999.
+local function inboxUrl()
+    local url = settings:readSetting("inbox_url") or config.inbox_url
+    if type(url) == "string" and url ~= "" then return (url:gsub("/+$", "")) end
+    local host = gatewayAddress()
+    return "http://" .. host .. ":" .. DEFAULT_HTTP_PORT
+end
+
+local function diagnosticsInfo(device_name)
+    local diagnostics = require("diagnostics")
+    local ok, version = pcall(function() return require("version"):getCurrentRevision() end)
+    return {
+        device = device_name,
+        model = Device.model,
+        time_utc = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        koreader_version = ok and version or "unknown",
+        live_mode = session ~= nil and session:isActive(),
+        plugins = diagnostics.pluginVersions({ "plugins", DataStorage:getDataDir() .. "/plugins" }),
+    }
+end
+
+local function sendDiagnostics()
+    local diagnostics = require("diagnostics")
+    local function tell(text, timeout)
+        UIManager:show(InfoMessage:new{ text = text, timeout = timeout })
+    end
+
+    -- A file of its own, not settings.reader.lua: this runs on every send and
+    -- must never rewrite the reader's settings.
+    local offset_path = DataStorage:getSettingsDir() .. "/koreader_mcp_diagnostics_offset.txt"
+    local device = diagnostics.safeName(identity().name)
+    -- Capture before anything of ours goes on screen.
+    local built, err = diagnostics.build({
+        json_encode = require("server").json.encode,
+        log_path = "crash.log", -- KOReader's launcher writes it in the install folder, its working directory
+        offset_path = offset_path,
+        info = diagnosticsInfo(device),
+        snapshot = function() return require("ui_agent").snapshot() end,
+        screenshot = function(path) return require("handlers").capture_png(path) end,
+    })
+    if not built then
+        log("diagnostics not built: " .. tostring(err))
+        tell(_("Diagnostics not sent: ") .. tostring(err))
+        return
+    end
+
+    local stamp = os.date("!%Y%m%d-%H%M%S")
+    local url = inboxUrl()
+    -- Asks to turn WiFi on if it is off, as any KOReader network action does.
+    NetworkMgr:runWhenOnline(function()
+        local sending = InfoMessage:new{ text = _("Sending diagnostics...") }
+        UIManager:show(sending)
+        UIManager:forceRePaint()
+        local sent, upload_err = diagnostics.upload(url, device, built, stamp)
+        UIManager:close(sending)
+        if sent then
+            diagnostics.commit(built, offset_path)
+            log("diagnostics sent: " .. device .. "/" .. stamp .. " (" .. built.size .. " bytes)")
+            tell(_("Diagnostics sent."), 3)
+        else
+            log("diagnostics upload to " .. url .. " failed: " .. tostring(upload_err))
+            tell(_("Diagnostics not sent: ") .. tostring(upload_err))
+        end
+        os.remove(built.path)
+    end)
+end
+
 function KOReaderMCP:onExit()
     stopSession("KOReader exiting")
 end
@@ -252,6 +323,15 @@ function KOReaderMCP:addToMainMenu(menu_items)
                 callback = function() self:showGatewayAddress() end,
             },
         },
+    }
+    menu_items.koreader_mcp_diagnostics = {
+        text = _("Send diagnostics"),
+        sorting_hint = "tools",
+        callback = function()
+            -- One shot, after the menu has closed: the bundle should show the
+            -- screen being reported, not this menu.
+            UIManager:scheduleIn(0.5, sendDiagnostics)
+        end,
     }
 end
 

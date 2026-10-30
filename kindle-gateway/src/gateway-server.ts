@@ -9,6 +9,8 @@ import { z } from 'zod';
 import sharp from 'sharp';
 import * as crypto from 'crypto';
 import { buildRestartCommand, resolvePluginSource } from './device-commands';
+import { listBundles, readBundle } from './diagnostics';
+import { packageHostOptionsFromEnv } from './package-host';
 import { SnapshotTracker, UiActResult, UiSnapshot, formatActResult, formatSnapshot, DEFAULT_MAX_LINES } from './ui-snapshot';
 
 // --- Type helpers ---
@@ -51,7 +53,7 @@ async function resizeScreenshot(base64Data: string): Promise<{ data: string; mim
   }
 }
 
-export function createApp(registry: DeviceRegistry) {
+export function createApp(registry: DeviceRegistry, inboxDir: string = packageHostOptionsFromEnv().inboxDir) {
   const app = express();
   app.use(express.json());
   // Latest snapshot id per device, shared by every MCP request (the transport is stateless).
@@ -208,6 +210,25 @@ export function createApp(registry: DeviceRegistry) {
         source: z.string().optional().describe('Optional source folder relative to the workspace root (e.g. ".claude/worktrees/foo/koreader_mcp.koplugin"). Default: "<plugin>.koplugin" at the workspace root.'),
       },
       async (args) => await deployPlugin(registry, args.device!, args.plugin!, args.source)
+    );
+
+    // === Diagnostics bundles uploaded by the "Send diagnostics" menu button ===
+
+    defineTool(server, 'list_diagnostics',
+      'List diagnostics bundles devices have uploaded, newest first. Works while the device is asleep or offline.',
+      { device: z.string().optional().describe('Device name; omit for all devices') },
+      async (args) => diagnosticsResult(() => ({
+        content: [{ type: 'text' as const, text: JSON.stringify(listBundles(inboxDir, args.device), null, 2) }],
+      }))
+    );
+
+    defineTool(server, 'read_diagnostics',
+      'Read one diagnostics bundle: versions, the crash.log lines new since the previous send, the top window snapshot and the screenshot. Works while the device is asleep or offline.',
+      {
+        device: z.string().describe('Device name'),
+        file: z.string().optional().describe('Bundle file name from list_diagnostics; omit for the newest'),
+      },
+      async (args) => diagnosticsResult(() => readDiagnosticsTool(inboxDir, args.device!, args.file))
     );
 
     return server;
@@ -392,6 +413,32 @@ export async function uiCall(
 }
 
 /** Standalone screenshot — calls Kindle's capture_screenshot, returns MCP image block */
+async function diagnosticsResult(read: () => ToolResult | Promise<ToolResult>): Promise<ToolResult> {
+  try {
+    return await read();
+  } catch (err) {
+    return errResult(`Diagnostics: ${(err as Error).message}`);
+  }
+}
+
+async function readDiagnosticsTool(inboxDir: string, device: string, file?: string): Promise<ToolResult> {
+  const bundle = readBundle(inboxDir, device, file);
+  const text = (name: string) => bundle.files[name]?.toString('utf8');
+  const parts = [`${bundle.device}/${bundle.file}, received ${bundle.received}, ${bundle.size} bytes`];
+  parts.push(`--- manifest.json\n${text('manifest.json') ?? '(missing)'}`);
+  parts.push(`--- crash.log (new lines only)\n${text('crash.log') || '(no new lines)'}`);
+  const snapshot = text('snapshot.json');
+  // All lines: unlike a live snapshot, this one cannot be asked for again.
+  parts.push(`--- snapshot\n${snapshot ? formatSnapshot(JSON.parse(snapshot) as UiSnapshot, Number.MAX_SAFE_INTEGER).join('\n') : '(missing)'}`);
+  const content: ContentBlock[] = [{ type: 'text', text: parts.join('\n\n') }];
+  const png = bundle.files['screenshot.png'];
+  if (png) {
+    const img = await resizeScreenshot(png.toString('base64'));
+    content.push({ type: 'image', data: img.data, mimeType: img.mimeType });
+  }
+  return { content };
+}
+
 async function captureScreenshotTool(
   registry: DeviceRegistry,
   deviceName: string
