@@ -16,7 +16,8 @@ docker compose down                    # stop
 The emulator opens no port for the agent: `koreader_mcp` dials out to the gateway and
 stays connected. To see that it is up, call the gateway's `list_devices`; `emu` is listed
 exactly while its connection is open. No connection appears in `docker compose logs` as
-a retry every 60 s.
+`[MCP] live mode connection lost: connect failed: connection refused`, 5 s and then 15 s
+after the loss, then every 60 s; `[MCP] live mode online as emu` marks it back.
 
 Screenshot of the virtual screen (until koreader_mcp's own screenshot works here):
 
