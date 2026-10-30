@@ -17,7 +17,7 @@ something is implemented.
 |---|---|---|
 | [Plugin deploy pipeline](architecture/deploy-pipeline.md) | how a plugin directory gets onto a Kindle, where the gateway reads plugin source, shell fallbacks | 2026-10-28 |
 | [Device bridge (agent to Kindle)](architecture/device-bridge.md) | how an agent call reaches a Kindle, which file owns the gateway tools, the stateless MCP transport, the on-device server, registration, screenshots and running on Android | 2026-10-30 |
-| [Synced reading list plugin](architecture/synced-reading-list.md) | where the synced reading list fetches the server list, maps books to local files, builds rows, filters and searches, shows the long-press pop-up, and opens a book at its synced position | 2026-10-28 |
+| [Synced reading list plugin](architecture/synced-reading-list.md) | where the synced reading list sets the progress sync device id from the Kindle serial, fetches the server list, maps books to local files, builds rows, filters and searches, shows the long-press pop-up, and opens a book at its synced position | 2026-10-30 |
 
 ## Traps
 
@@ -37,6 +37,7 @@ crashing.
 | get_menu_items says no menu is visible while KOReader's main menu is open on screen | [MAIN_MENU_INVISIBLE_TO_GATEWAY_MENU_TOOLS](traps/MAIN_MENU_INVISIBLE_TO_GATEWAY_MENU_TOOLS.md) | koreader_mcp | 2026-10-28 |
 | newline in a KOReader menu item text shows as a space, no paragraph break | [MENU_ITEM_NEWLINES_BECOME_SPACES](traps/MENU_ITEM_NEWLINES_BECOME_SPACES.md) | rssreader | 2026-10-28 |
 | address already in use on port 8888 after restarting KOReader | [PORT_8888_STAYS_BUSY_AFTER_RESTART](traps/PORT_8888_STAYS_BUSY_AFTER_RESTART.md) | koreader_mcp | 2026-10-28 |
+| a second device says 'Latest progress is coming from this device' and will not pull the position another device pushed | [RESTORED_SETTINGS_CLONE_PROGRESS_SYNC_DEVICE_ID](traps/RESTORED_SETTINGS_CLONE_PROGRESS_SYNC_DEVICE_ID.md) | kosync | 2026-10-30 |
 | list_devices returns an empty list or new tools are not callable after rebuilding the gateway | [TOOLS_MISSING_AFTER_GATEWAY_REBUILD](traps/TOOLS_MISSING_AFTER_GATEWAY_REBUILD.md) | kindle-gateway | 2026-10-30 |
 
 ## Reference

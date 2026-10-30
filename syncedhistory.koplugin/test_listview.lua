@@ -286,6 +286,23 @@ test("details: a missing book, no timestamp, no device", function()
     }, "\n"))
 end)
 
+test("rows and details: the last 4 characters of the device id tell two Kindles apart", function()
+    local rows = ListView.rows({
+        { document = "a", percentage = 0.5, device = "KindlePaperWhite3", device_id = "3C6A84AA41A545BB9917DDF53D8599ED", timestamp = 2 },
+        { document = "b", percentage = 0.5, device = "KindlePaperWhite3", device_id = "", timestamp = 1 },
+        { document = "c", device_id = "AB12" },
+    }, { lookup = lookupFrom({ a = "/mnt/us/documents/a.epub" }) })
+    eq(rows[1].mandatory, "50% · KindlePaperWhite3 (99ED) · on this device")
+    eq(rows[1].device_id, "3C6A84AA41A545BB9917DDF53D8599ED")
+    eq(rows[2].mandatory, "50% · KindlePaperWhite3 · missing", "empty id: model only")
+    eq(rows[2].device_id, nil)
+    eq(rows[3].mandatory, "0% · unknown device (AB12) · missing")
+    local text = ListView.details(rows[1], { date = fakeDate })
+    check(text:find("\nLast device: KindlePaperWhite3 %(99ED%)\n"), "details carry the tail:\n" .. text)
+    eq(ListView.deviceLabel("Kindle", "abc"), "Kindle", "an id under 4 characters is not shown")
+    eq(ListView.deviceLabel("Kindle", nil), "Kindle")
+end)
+
 test("details: translated, a book at the root, and the real os.date", function()
     local rows = ListView.rows({ { document = "a", timestamp = 0, percentage = 1 } },
         { lookup = lookupFrom({ a = "/book.epub" }) })
