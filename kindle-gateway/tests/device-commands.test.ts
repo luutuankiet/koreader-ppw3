@@ -49,6 +49,10 @@ describe('buildRestartScript', () => {
     expect(buildRestartCommand()).toBe(`nohup sh -c '${buildRestartScript()}' > /tmp/ko_restart.log 2>&1 &`);
   });
 
+  test('launches koreader.sh with --kual so the Kindle status bar stays paused', () => {
+    expect(buildRestartScript()).toContain('./koreader.sh --kual');
+  });
+
   test('wrapped command is valid sh', () => {
     const r = spawnSync('sh', ['-n', '-c', buildRestartCommand()]);
     expect(r.status).toBe(0);

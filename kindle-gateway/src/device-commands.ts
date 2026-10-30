@@ -10,7 +10,14 @@ export function buildRestartCommand(): string {
 
 /** The script buildRestartCommand detaches. Contains no single quote, so it can be wrapped in one. */
 export function buildRestartScript(): string {
-  return ['sleep 2', 'killall luajit', 'sleep 5', 'cd /mnt/us/koreader && ./koreader.sh'].join('; ');
+  return [
+    'sleep 2',
+    'killall luajit',
+    'sleep 5',
+    // --kual makes koreader.sh SIGSTOP the Kindle window manager (FW >= 5.7.2). Without it the
+    // Kindle status bar's clock and WiFi icon repaint over KOReader every minute.
+    'cd /mnt/us/koreader && ./koreader.sh --kual',
+  ].join('; ');
 }
 
 export type SourceResolution =
