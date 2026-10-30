@@ -23,7 +23,7 @@ something is implemented.
 |---|---|---|
 | [Plugin deploy pipeline](../../../docs/architecture/deploy-pipeline.md) | how a plugin directory gets onto a Kindle, where the gateway reads plugin source, shell fallbacks, plugin packages and the upload inbox | 2026-10-31 |
 | [Device bridge (agent to Kindle)](../../../docs/architecture/device-bridge.md) | how an agent call reaches a Kindle, which file owns the gateway tools, the stateless MCP transport, the on-device server, registration, screenshots and running on Android | 2026-10-30 |
-| [Synced reading list plugin](../../../docs/architecture/synced-reading-list.md) | where the synced reading list sets the progress sync device id from the Kindle serial, fetches the server list, maps books to local files, builds rows, filters and searches, shows the long-press pop-up, and opens a book at its synced position | 2026-10-30 |
+| [Synced reading list plugin](../../../docs/architecture/synced-reading-list.md) | where the synced reading list sets the progress sync device id from the Kindle serial, fetches the server list, maps books to local files under any of their merged file names, builds rows, filters and searches, refreshes, shows the long-press pop-up, removes a book from the list, and opens a book at its synced position | 2026-10-31 |
 
 <!-- END GENERATED INDEX -->
 
