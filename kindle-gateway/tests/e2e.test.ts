@@ -1,44 +1,17 @@
 import http from 'http';
+import * as net from 'net';
+import { startDeviceListener } from '../src/device-link';
+import { closeServer, FakeDevice, listening } from './helpers/fake-device';
 import { DeviceRegistry } from '../src/device-registry';
 import { createApp } from '../src/gateway-server';
 
-// --- Fake Kindle (inline, no import needed) ---
-function createFakeKindle(port: number) {
-  return http.createServer((req, res) => {
-    if (req.method === 'GET' && req.url === '/health') {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, device: 'fake-kindle' }));
-      return;
-    }
-    if (req.method === 'POST' && req.url === '/jsonrpc') {
-      let body = '';
-      req.on('data', (c) => { body += c; });
-      req.on('end', () => {
-        const rpc = JSON.parse(body);
-        let result: unknown;
-        switch (rpc.method) {
-          case 'read_files':
-            result = { files: [{ path: '/mnt/us/test.txt', size: 42 }] };
-            break;
-          case 'run_command':
-            result = { exit_code: 0, stdout: `ran: ${rpc.params?.command || 'none'}` };
-            break;
-          case 'device_status':
-            result = { battery: 85, wifi: true, koreader: { version: '2024.04' } };
-            break;
-          default:
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ jsonrpc: '2.0', id: rpc.id, error: { code: -32601, message: 'Unknown method' } }));
-            return;
-        }
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ jsonrpc: '2.0', id: rpc.id, result }));
-      });
-      return;
-    }
-    res.writeHead(404);
-    res.end();
-  });
+function fakeTools(method: string, params: any): unknown {
+  switch (method) {
+    case 'read_files': return { files: [{ path: '/mnt/us/test.txt', size: 42 }] };
+    case 'run_command': return { exit_code: 0, stdout: `ran: ${params?.command || 'none'}` };
+    case 'device_status': return { battery: 85, wifi: true, koreader: { version: '2024.04' } };
+    default: return { unexpected: method };
+  }
 }
 
 // --- Test helpers ---
@@ -73,27 +46,27 @@ function get(port: number, path: string): Promise<{ status: number; data: any }>
 
 // --- E2E Tests ---
 describe('E2E: kindle-gateway + fake kindle', () => {
-  const KINDLE_PORT = 18888;
   const GATEWAY_PORT = 19999;
 
-  let fakeKindle: http.Server;
+  let listener: net.Server;
+  let fake: FakeDevice;
   let gatewayServer: http.Server;
 
   beforeAll(async () => {
-    // Start fake kindle
-    fakeKindle = createFakeKindle(KINDLE_PORT);
-    await new Promise<void>((resolve) => fakeKindle.listen(KINDLE_PORT, '127.0.0.1', resolve));
-
-    // Start gateway
     const registry = new DeviceRegistry();
+    listener = startDeviceListener(registry, 0, '127.0.0.1');
+    fake = new FakeDevice(await listening(listener), fakeTools);
+    await fake.hello('test-kindle');
+
     const app = createApp(registry);
     gatewayServer = app.listen(GATEWAY_PORT, '127.0.0.1');
     await new Promise<void>((resolve) => gatewayServer.on('listening', resolve));
   });
 
   afterAll(async () => {
+    fake.destroy();
     await new Promise<void>((resolve) => gatewayServer.close(() => resolve()));
-    await new Promise<void>((resolve) => fakeKindle.close(() => resolve()));
+    await closeServer(listener);
   });
 
   test('gateway health check', async () => {
@@ -102,17 +75,9 @@ describe('E2E: kindle-gateway + fake kindle', () => {
     expect(res.data.ok).toBe(true);
   });
 
-  test('register fake kindle with gateway', async () => {
-    const res = await post(GATEWAY_PORT, '/register', {
-      name: 'test-kindle',
-      ip: '127.0.0.1',
-      port: KINDLE_PORT,
-      tools: ['read_files', 'run_command', 'device_status'],
-    });
-    expect(res.status).toBe(200);
-    expect(res.data.ok).toBe(true);
-    expect(res.data.device.name).toBe('test-kindle');
-    expect(res.data.device.status).toBe('online');
+  test('/register is gone', async () => {
+    const res = await post(GATEWAY_PORT, '/register', { name: 'x', ip: '127.0.0.1', port: 1 });
+    expect(res.status).toBe(404);
   });
 
   test('MCP initialize (stateless: no session id issued)', async () => {
@@ -225,28 +190,25 @@ describe('E2E: kindle-gateway + fake kindle', () => {
     });
   });
 
-  test('fake kindle health is reachable from gateway host', async () => {
-    const res = await get(KINDLE_PORT, '/health');
-    expect(res.status).toBe(200);
-    expect(res.data.ok).toBe(true);
-    expect(res.data.device).toBe('fake-kindle');
-  });
+  describe('tools reach the device over its connection', () => {
+    const MCP_ACCEPT = { 'Accept': 'application/json, text/event-stream' };
+    async function callTool(id: number, name: string, args: object): Promise<any> {
+      const res = await post(GATEWAY_PORT, '/mcp', { jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } }, MCP_ACCEPT);
+      const payload = typeof res.data === 'string'
+        ? JSON.parse(res.data.split('\n').find((l: string) => l.startsWith('data:'))!.slice(5))
+        : res.data;
+      return payload.result;
+    }
 
-  test('fake kindle responds to JSON-RPC directly', async () => {
-    const res = await post(KINDLE_PORT, '/jsonrpc', {
-      jsonrpc: '2.0',
-      id: 99,
-      method: 'device_status',
-      params: {},
+    test('run_command goes down the link and its reply comes back', async () => {
+      const result = await callTool(50, 'run_command', { device: 'test-kindle', params: JSON.stringify({ command: 'uptime' }) });
+      expect(result.content[0].text).toContain('ran: uptime');
     });
-    expect(res.status).toBe(200);
-    expect(res.data.result.battery).toBe(85);
-    expect(res.data.result.koreader.version).toBe('2024.04');
-  });
 
-  test('registration with missing fields returns 400', async () => {
-    const res = await post(GATEWAY_PORT, '/register', { name: 'bad-device' });
-    expect(res.status).toBe(400);
-    expect(res.data.error).toBeDefined();
+    test('a device with no connection is reported as not connected', async () => {
+      const result = await callTool(51, 'run_command', { device: 'absent', params: JSON.stringify({ command: 'uptime' }) });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toMatch(/not connected/);
+    });
   });
 });
