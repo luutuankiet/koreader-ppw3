@@ -5,10 +5,31 @@ import { closeServer, FakeDevice, listening } from './helpers/fake-device';
 import { DeviceRegistry } from '../src/device-registry';
 import { createApp } from '../src/gateway-server';
 
-function fakeTools(method: string, params: any): unknown {
+let snapshotId = 0;
+let uiActCalls = 0;
+let fake: FakeDevice;
+const fakeSnapshot = (id: number) => ({
+  snapshot: id,
+  window: 'Menu',
+  total: 45,
+  nodes: Array.from({ length: 45 }, (_, i) => ({ ref: `${id}_${i + 1}`, kind: 'row', text: `Book ${i + 1}`, state: '' })),
+});
+
+function fakeTools(method: string, params: any, id: number): unknown {
   switch (method) {
     case 'read_files': return { files: [{ path: '/mnt/us/test.txt', size: 42 }] };
     case 'run_command': return { exit_code: 0, stdout: `ran: ${params?.command || 'none'}` };
+    case 'ui_snapshot':
+      snapshotId += 1;
+      return fakeSnapshot(snapshotId);
+    case 'ui_act':
+      uiActCalls += 1;
+      if (params?.ref === '999_1') {
+        fake.sendJson({ id, error: { code: -32602, message: 'stale reference 999_1, take a new snapshot' } });
+        return undefined;
+      }
+      snapshotId += 1;
+      return { result: `${params?.what} done`, snapshot: fakeSnapshot(snapshotId), logs: ['a log line'] };
     case 'device_status': return { battery: 85, wifi: true, koreader: { version: '2024.04' } };
     default: return { unexpected: method };
   }
@@ -49,7 +70,6 @@ describe('E2E: kindle-gateway + fake kindle', () => {
   const GATEWAY_PORT = 19999;
 
   let listener: net.Server;
-  let fake: FakeDevice;
   let gatewayServer: http.Server;
 
   beforeAll(async () => {
@@ -187,6 +207,51 @@ describe('E2E: kindle-gateway + fake kindle', () => {
         expect(res.status).toBe(405);
         expect(JSON.parse(res.body).error.message).toMatch(/Method not allowed/);
       }
+    });
+  });
+
+  describe('snapshot and tap tools', () => {
+    const call = async (name: string, args: object) => {
+      const res = await post(GATEWAY_PORT, '/mcp', { jsonrpc: '2.0', id: 50, method: 'tools/call', params: { name, arguments: args } },
+        { 'Accept': 'application/json, text/event-stream' });
+      const line = String(res.data).split('\n').find((l: string) => l.startsWith('data:'));
+      return (line ? JSON.parse(line.slice(5)) : res.data).result;
+    };
+
+    test('snapshot returns the cut list', async () => {
+      const r = await call('snapshot', { device: 'test-kindle' });
+      expect(r.isError).toBeFalsy();
+      expect(r.content[0].text).toContain('[+5 more]');
+      expect(r.content).toHaveLength(1); // no screenshot unless asked
+    });
+
+    test('tap on a fresh reference returns result, snapshot and logs', async () => {
+      const s = await call('snapshot', { device: 'test-kindle' });
+      const ref = /\[(\d+_1)\]/.exec(s.content[0].text)![1];
+      const r = await call('tap', { device: 'test-kindle', ref });
+      expect(r.content[0].text).toContain('tap done');
+      expect(r.content[0].text).toContain('[+5 more]');
+      expect(r.content[0].text).toContain('a log line');
+    });
+
+    test('a reference older than two snapshots is stale, without calling the device', async () => {
+      const first = await call('snapshot', { device: 'test-kindle' });
+      const ref = /\[(\d+_1)\]/.exec(first.content[0].text)![1];
+      await call('snapshot', { device: 'test-kindle' });
+      await call('snapshot', { device: 'test-kindle' });
+      const before = uiActCalls;
+      const r = await call('tap', { device: 'test-kindle', ref });
+      expect(r.isError).toBe(true);
+      expect(r.content[0].text).toMatch(/stale reference .*take a new snapshot/);
+      expect(uiActCalls).toBe(before);
+    });
+
+    test('a device error reaches the agent and leaves the device online', async () => {
+      const r = await call('tap', { device: 'test-kindle', ref: '999_1' });
+      expect(r.isError).toBe(true);
+      expect(r.content[0].text).toContain('stale reference 999_1');
+      const list = await call('list_devices', {});
+      expect(JSON.parse(list.content[0].text)[0].name).toBe('test-kindle');
     });
   });
 

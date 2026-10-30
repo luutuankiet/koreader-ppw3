@@ -105,12 +105,15 @@ function KOReaderMCP:schedule_poll()
     if not UIManager then return end
     if not self.server or not self.server.running then return end
 
-    UIManager:scheduleIn(0.5, function()
+    local function poll()
         if self.server and self.server.running then
             self.server:poll()
             self:schedule_poll()
         end
-    end)
+    end
+    -- The server's own poll is never "pending UI work" for ui_act's idle wait.
+    require("ui_agent").own_tasks[poll] = true
+    UIManager:scheduleIn(0.5, poll)
 end
 
 function KOReaderMCP:registerWithGateway()

@@ -9,6 +9,7 @@ import { z } from 'zod';
 import sharp from 'sharp';
 import * as crypto from 'crypto';
 import { buildRestartCommand, resolvePluginSource } from './device-commands';
+import { SnapshotTracker, UiActResult, UiSnapshot, formatActResult, formatSnapshot, DEFAULT_MAX_LINES } from './ui-snapshot';
 
 // --- Type helpers ---
 type ContentBlock =
@@ -17,6 +18,8 @@ type ContentBlock =
 
 type ToolResult = { content: ContentBlock[]; isError?: boolean };
 type ToolArgs = Record<string, string | undefined>;
+// Typed arguments for tools whose schema has booleans or numbers.
+type UiArgs = { device: string; ref?: string; text?: string; name?: string; value?: string; clear?: boolean; screenshot?: boolean; max_lines?: number };
 
 function defineTool(
   server: McpServer,
@@ -51,6 +54,8 @@ async function resizeScreenshot(base64Data: string): Promise<{ data: string; mim
 export function createApp(registry: DeviceRegistry) {
   const app = express();
   app.use(express.json());
+  // Latest snapshot id per device, shared by every MCP request (the transport is stateless).
+  const uiTracker = new SnapshotTracker();
 
   app.get('/health', (_req: Request, res: Response) => {
     res.json({ ok: true, devices: registry.list().length });
@@ -129,6 +134,54 @@ export function createApp(registry: DeviceRegistry) {
       'Trigger a KOReader internal event (e.g. ShowMenu, ShowReaderMenu, Close). Returns result + screenshot. Use instead of touch simulation.',
       { device: z.string().describe('Device name'), params: z.string().describe('JSON: {"event": "ShowMenu", "args": {}}') },
       async (args) => await forwardWithScreenshot(registry, args.device!, 'send_event', JSON.parse(args.params!))
+    );
+
+    // === Widget snapshot and actions ===
+    // Each action waits on the device until KOReader is idle, then returns one result
+    // line, the new snapshot and the log lines the action caused. Screenshot only on request.
+
+    const uiCommon = {
+      device: z.string().describe('Device name'),
+      screenshot: z.boolean().optional().describe('Also return a screenshot (default false)'),
+      max_lines: z.number().int().positive().optional().describe(`Snapshot lines before the [+N more] cut (default ${DEFAULT_MAX_LINES})`),
+    };
+    const ui = (handler: (a: UiArgs) => Promise<ToolResult>) =>
+      (args: ToolArgs) => handler(args as unknown as UiArgs);
+
+    defineTool(server, 'snapshot',
+      'List the widgets of the top KOReader window, one line each: [ref] kind "text" (state). Refs look like 3_7 and stay valid for the last 2 snapshots. Kinds: item (main menu row), row (list row), check, button, icon, input, tap, text.',
+      uiCommon,
+      ui(async (a) => await uiCall(registry, uiTracker, a, 'ui_snapshot', {}))
+    );
+
+    defineTool(server, 'tap',
+      'Tap a widget by its snapshot ref (a gesture at the centre of the widget, no touch injection). Waits for KOReader to settle, returns the result, a new snapshot and the logs it caused.',
+      { ...uiCommon, ref: z.string().describe('Widget ref from the last 2 snapshots, e.g. "3_7"') },
+      ui(async (a) => await uiCall(registry, uiTracker, a, 'ui_act', { what: 'tap', ref: a.ref }))
+    );
+
+    defineTool(server, 'hold',
+      'Long-press a widget by its snapshot ref. Waits for KOReader to settle, returns the result, a new snapshot and the logs it caused.',
+      { ...uiCommon, ref: z.string().describe('Widget ref from the last 2 snapshots, e.g. "3_7"') },
+      ui(async (a) => await uiCall(registry, uiTracker, a, 'ui_act', { what: 'hold', ref: a.ref }))
+    );
+
+    defineTool(server, 'tap_text',
+      'Tap the first visible widget whose text matches (exact, case-insensitive; else the first that contains it). Needs no snapshot first.',
+      { ...uiCommon, text: z.string().describe('Visible text, e.g. "Synced reading list"') },
+      ui(async (a) => await uiCall(registry, uiTracker, a, 'ui_act', { what: 'tap_text', text: a.text }))
+    );
+
+    defineTool(server, 'type',
+      'Type text into the focused input field of the top window (or its only input).',
+      { ...uiCommon, text: z.string().describe('Text to type'), clear: z.boolean().optional().describe('Clear the field first') },
+      ui(async (a) => await uiCall(registry, uiTracker, a, 'ui_act', { what: 'type', text: a.text, clear: a.clear === true }))
+    );
+
+    defineTool(server, 'action',
+      'Run a KOReader Dispatcher action by name, e.g. "show_menu" (main menu), "home", "toggle_wifi". Optional value for actions that take one.',
+      { ...uiCommon, name: z.string().describe('Dispatcher action name'), value: z.string().optional().describe('Optional value; numbers and true/false are converted') },
+      ui(async (a) => await uiCall(registry, uiTracker, a, 'ui_act', { what: 'action', name: a.name, value: parseActionValue(a.value) }))
     );
 
     // === Screenshot (standalone, no preceding event) ===
@@ -272,6 +325,70 @@ async function forwardWithScreenshot(
     console.error(`[forwardWithSS] Failed for ${deviceName}:`, err);
     return errResult(`Failed to reach '${deviceName}': ${err instanceof Error ? err.message : String(err)}`);
   }
+}
+
+/** Dispatcher values arrive as strings over MCP; numbers and booleans are converted. */
+export function parseActionValue(v: string | undefined): unknown {
+  if (v === undefined || v === '') return undefined;
+  if (v === 'true') return true;
+  if (v === 'false') return false;
+  if (/^-?\d+(\.\d+)?$/.test(v)) return Number(v);
+  return v;
+}
+
+/** Shared wrapper for snapshot / tap / hold / tap_text / type / action. Exported for tests. */
+export async function uiCall(
+  registry: DeviceRegistry,
+  tracker: SnapshotTracker,
+  args: UiArgs,
+  method: 'ui_snapshot' | 'ui_act',
+  params: Record<string, unknown>
+): Promise<ToolResult> {
+  const deviceName = args.device;
+  const device = registry.get(deviceName);
+  if (!device) return errResult(`Device '${deviceName}' is not connected`);
+
+  if (typeof params.ref === 'string') {
+    const stale = tracker.checkRef(deviceName, params.ref);
+    if (stale) return errResult(stale);
+  }
+
+  const client = new KindleClient(device);
+  let response;
+  try {
+    // ui_act replies only once KOReader is idle (capped at 5s on the device).
+    response = await client.callTool(method, params, 20000);
+  } catch (err) {
+    console.error(`[ui] Failed to reach ${deviceName}:`, err);
+    return errResult(`Failed to reach '${deviceName}': ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (response.error) return errResult(response.error.message);
+
+  const maxLines = args.max_lines ?? DEFAULT_MAX_LINES;
+  let text: string;
+  if (method === 'ui_snapshot') {
+    const snap = response.result as UiSnapshot;
+    tracker.see(deviceName, snap.snapshot);
+    text = formatSnapshot(snap, maxLines).join('\n');
+  } else {
+    const act = response.result as UiActResult;
+    tracker.see(deviceName, act.snapshot?.snapshot);
+    text = formatActResult(act, maxLines);
+  }
+  const content: ContentBlock[] = [{ type: 'text' as const, text }];
+  if (args.screenshot === true) {
+    try {
+      const ss = await client.callTool('capture_screenshot', {}, 30000);
+      const img = (ss.result || {}) as { image_base64?: string };
+      if (!ss.error && img.image_base64) {
+        const small = await resizeScreenshot(img.image_base64);
+        content.push({ type: 'image' as const, data: small.data, mimeType: small.mimeType });
+      }
+    } catch (ssErr) {
+      console.warn(`[ui] Screenshot failed for ${deviceName}:`, ssErr);
+    }
+  }
+  return { content };
 }
 
 /** Standalone screenshot — calls Kindle's capture_screenshot, returns MCP image block */

@@ -470,6 +470,23 @@ local dispatch_table = {
     write_file = handlers.write_file,
 }
 
+-- Widget snapshot and actions (issue #35); see ui_agent.lua.
+local ui_agent = require("ui_agent")
+ui_agent.installLogCapture()
+handlers.ui_agent = ui_agent
+
+function handlers.ui_snapshot(params)
+    local snap, err = ui_agent.snapshot()
+    if not snap then return nil, {code = -32603, message = err} end
+    return snap
+end
+dispatch_table.ui_snapshot = handlers.ui_snapshot
+
+-- Methods that reply later, once the UI is idle: fn(params, done).
+handlers.deferred = {
+    ui_act = function(params, done) ui_agent.act(params or {}, done) end,
+}
+
 function handlers.dispatch(method, params)
     local fn = dispatch_table[method]
     if not fn then
