@@ -57,5 +57,28 @@ local nodes = ui.walk(tree)
 check("adjacent duplicate text collapses, button keeps its label to itself, sizeless button skipped",
     #nodes == 2 and nodes[1].text == "Title" and nodes[2].kind == "button" and nodes[2].text == "OK")
 
+-- isIdle: a fake UIManager, loaded before ui_agent first asks for it
+local filemanager = { name = "filemanager", covers_fullscreen = true }
+local list = { name = "list", covers_fullscreen = true }
+local popup = { name = "popup" }
+local fakeUI = { _task_queue = {}, _refresh_stack = {}, _dirty = {},
+    _window_stack = { { widget = filemanager }, { widget = list } } }
+package.loaded["ui/uimanager"] = fakeUI
+check("idle with nothing dirty", ui.isIdle() == true)
+fakeUI._dirty = { [list] = true }
+check("busy when the top fullscreen window is dirty", ui.isIdle() == false)
+-- Closing one fullscreen window and showing another in the same tick leaves the
+-- window underneath dirty; _repaint never reaches it, so it stays dirty.
+fakeUI._dirty = { [filemanager] = true }
+check("idle when only a window under a fullscreen one is dirty", ui.isIdle() == true)
+fakeUI._window_stack[3] = { widget = popup }
+fakeUI._dirty = { [filemanager] = true, [popup] = true }
+check("busy when a window above the fullscreen one is dirty", ui.isIdle() == false)
+fakeUI._dirty = { [{}] = true }
+check("idle when the dirty widget is not on the window stack", ui.isIdle() == true)
+fakeUI._window_stack = { { widget = popup } }
+fakeUI._dirty = { [popup] = true }
+check("busy when no window covers the screen and one is dirty", ui.isIdle() == false)
+
 print(fails == 0 and "ALL OK" or (fails .. " FAILED"))
 os.exit(fails == 0 and 0 or 1)

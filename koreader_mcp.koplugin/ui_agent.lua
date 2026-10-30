@@ -246,7 +246,20 @@ function M.isIdle()
             return false
         end
     end
-    if UIManager._dirty and next(UIManager._dirty) then return false end
+    -- Only windows UIManager:_repaint would reach count: it starts at the topmost
+    -- covers_fullscreen window and never clears _dirty for anything under it, so
+    -- a covered window (the file manager under a list that was just replaced)
+    -- stays dirty until it is uncovered.
+    local dirty, stack = UIManager._dirty, UIManager._window_stack
+    if dirty and next(dirty) and stack then
+        local start = 1
+        for i = #stack, 1, -1 do
+            if stack[i].widget.covers_fullscreen then start = i break end
+        end
+        for i = start, #stack do
+            if dirty[stack[i].widget] then return false end
+        end
+    end
     if UIManager._refresh_stack and #UIManager._refresh_stack > 0 then return false end
     return true
 end
