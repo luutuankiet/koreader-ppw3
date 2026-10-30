@@ -24,9 +24,26 @@ local filemanagerutil = require("apps/filemanager/filemanagerutil")
 local _ = require("gettext")
 
 local Client = require("syncedhistory_client")
+local DeviceId = require("syncedhistory_deviceid")
 local Http = require("syncedhistory_http")
 local ListView = require("syncedhistory_listview")
 local LocalIndex = require("syncedhistory_localindex")
+
+-- Give the progress sync a device id derived from this Kindle's serial, so a
+-- restored settings file can't make two Kindles share one. This runs when the
+-- file loads: PluginLoader:loadPlugins runs every plugin's main.lua before it
+-- builds any instance, so KOSync:init, which copies device_id once per
+-- instance, already sees the new id in the first file browser or book.
+-- "syncedhistory_serial_path" points at a fake serial on the emulator; it is
+-- unset on real devices, where /proc/usid is read.
+-- Never let it stop the plugin from loading.
+local ok_id, err_id = pcall(DeviceId.apply, {
+    settings = G_reader_settings,
+    md5 = md5,
+    path = G_reader_settings:readSetting("syncedhistory_serial_path"),
+    log = logger,
+})
+if not ok_id then logger.warn("syncedhistory: device id not set:", err_id) end
 
 -- KOReader builds a new plugin instance each time it switches between the
 -- file browser and a book, but loads this file once per run. Keeping the
