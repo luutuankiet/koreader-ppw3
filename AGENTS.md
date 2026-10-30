@@ -6,17 +6,17 @@ Workspace for developing KOReader plugins for Kindle Paperwhite 3 devices, plus 
 
 - KOReader plugins run on Lua 5.1 (LuaJIT). No 5.2+ syntax.
 - The Kindle has a weak CPU and a 64MB `/tmp` tmpfs. Measure performance on the device, not only in an emulator.
-- `koreader_mcp` is a single-threaded Lua server: never route a request back through the device to itself.
+- `koreader_mcp` is single-threaded Lua on KOReader's UI loop: never route a request back through the device to itself.
 - Plugins sit at the workspace root as `<name>.koplugin/`; the gateway deploys any such directory by bare name.
 - `rssreader.koplugin/` is its own git repository and is gitignored here.
 
 ## Layout
 
-- `koreader_mcp.koplugin/` - Lua HTTP + JSON-RPC server running inside KOReader (`handlers.lua` tools, `server.lua` socket loop, `main.lua` entry and phone-home, `ui_agent.lua` widget snapshot and actions, tests with `luajit test_ui_agent.lua`)
-- `kindle-gateway/` - Node/TypeScript MCP relay (`src/gateway-server.ts` tools, `src/device-registry.ts` in-memory registry, `src/ui-snapshot.ts` snapshot formatting and stale references)
+- `koreader_mcp.koplugin/` - agent bridge inside KOReader, dialling out to the gateway during a live session (`handlers.lua` tools, `live.lua` session and connection, `main.lua` entry and menu, `server.lua` JSON codec, `ui_agent.lua` widget snapshot and actions, tests with `luajit test_ui_agent.lua` and `luajit test_live.lua`)
+- `kindle-gateway/` - Node/TypeScript MCP relay (`src/gateway-server.ts` tools, `src/device-link.ts` device connections, `src/device-registry.ts` in-memory registry of connected devices, `src/ui-snapshot.ts` snapshot formatting and stale references)
 - `rssreader.koplugin/` - FreshRSS reader plugin (separate repo)
 - `syncedhistory.koplugin/` - synced reading list plugin (map: `docs/architecture/synced-reading-list.md`; each module has a `test_*.lua`, run with `luajit test_<name>.lua`, or `--koreader` from a KOReader install folder for the real md5 and lfs)
-- `emulator/` - KOReader `v2026.07.1` in Docker, registered with the gateway as device `emu` (`emulator/README.md`); its `state/` and `library/` are gitignored
+- `emulator/` - KOReader `v2026.07.1` in Docker, permanently connected to the gateway as device `emu` (`emulator/README.md`); its `state/` and `library/` are gitignored
 - `scripts/` - shell deploy fallbacks, `publish.sh` (plugin packages the gateway serves at `/pkg/`) and the docs index generator
 - `kosettings_backup/` - gitignored device settings backup
 

@@ -489,7 +489,7 @@ async function deployPlugin(
   const deployed: string[] = [];
   const errors: string[] = [];
 
-  // Step 2: Pre-deploy cleanup — free /tmp, kill stale port listeners
+  // Step 2: Pre-deploy cleanup: free /tmp
   console.log(`[deploy] Pre-deploy cleanup on ${deviceName}`);
   try {
     const cleanResp = await client.callTool('run_command', {

@@ -6,12 +6,12 @@ verified: 2026-10-31
 
 # Plugin deploy pipeline
 
-`deploy_plugin(device, plugin)` in `kindle-gateway/src/gateway-server.ts` (around lines 400-515, a starting point not an address) takes a bare plugin name, reads `<PLUGINS_SRC>/<name>.koplugin/*.lua`, checks the device is online, runs `mkdir -p` and a `/tmp` cleanup on it, writes each file, restarts KOReader and polls device health (10 tries, 5s apart).
+`deploy_plugin(device, plugin)` in `kindle-gateway/src/gateway-server.ts` (around lines 460-576, a starting point not an address) takes a bare plugin name, reads `<PLUGINS_SRC>/<name>.koplugin/*.lua`, checks the device is connected, runs `mkdir -p` and a `/tmp` cleanup on it, writes each file over the device's connection, restarts KOReader and waits up to 60 s for a new connection under that name.
 
 - The container mounts the workspace root read-only at `/workspace` and `PLUGINS_SRC` defaults to that. Any `<name>.koplugin/` directory at the root is deployable with no gateway change; an unknown name returns the list of available ones.
 - Optional `source`: a folder relative to the workspace root, for example a plugin inside a git worktree: `deploy_plugin {"device":"emu","plugin":"koreader_mcp","source":".claude/worktrees/<name>/koreader_mcp.koplugin"}`. Absolute paths and any `..` that leaves the workspace are refused (`resolvePluginSource` in `kindle-gateway/src/device-commands.ts`). Only top-level `.lua` files are copied either way.
 - Destination is `/mnt/us/koreader/plugins/<name>.koplugin` on the device, named by `plugin` even when `source` is set.
-- The restart kills whatever listens on the device's registered port (`buildRestartScript`), then `killall luajit`, then runs `koreader.sh`.
+- The restart (`buildRestartScript`) runs `killall luajit`, then `koreader.sh`. The session resumes at the next start, because `session_open` is still set after a kill.
 - Fallbacks without the gateway: `scripts/deploy-to-kindle.sh` (the MCP plugin) and `scripts/deploy-rssreader.sh` (tarball path for the reader). Both take an SSH alias as argument.
 
 ## Packages for the on-device installer
@@ -26,7 +26,7 @@ Kindles reach only the LAN and run no agent server, so they pull plugins instead
 
 ## After a gateway code change
 
-Rebuild with `docker compose build && docker compose up -d` from `kindle-gateway/`. The registry empties on recreate and refills on the next device phone-home, which only happens when WiFi connects or KOReader starts (there is no periodic heartbeat): a sleeping Kindle stays missing until woken, the emulator until its KOReader restarts; the MCP proxy may quarantine changed tools until they are re-approved.
+Rebuild with `docker compose build && docker compose up -d` from `kindle-gateway/`. The registry empties on recreate and refills as devices in a live session dial back: the emulator keeps retrying every 60 s, a Kindle session gives up after 5 s, 15 s and 60 s and must be started again in its menu. The MCP proxy may quarantine changed tools until they are re-approved.
 
 ## Always verify by checksum
 
