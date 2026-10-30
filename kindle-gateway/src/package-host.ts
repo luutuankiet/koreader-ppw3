@@ -27,8 +27,8 @@ export function packageHostOptionsFromEnv(env: NodeJS.ProcessEnv = process.env):
 }
 
 // One path segment each, so a name can never climb out of the inbox folder.
-const DEVICE_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/;
-const BUNDLE_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}\.tar\.gz$/;
+export const DEVICE_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/;
+export const BUNDLE_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}\.tar\.gz$/;
 
 export function packageHostRouter(opts: PackageHostOptions): Router {
   const router = express.Router();

@@ -316,33 +316,42 @@ function handlers.send_event(params)
     return {sent = params.event, args = params.args or {}}
 end
 
---- capture_screenshot: Capture e-ink framebuffer, return base64 PNG
---- The gateway converts this to an MCP image content block
-function handlers.capture_screenshot(params)
-    -- Android apps cannot write /tmp, so on Android this fails with "Screen:shot failed: nil".
-    local ss_path = "/tmp/mcp_ss.png"
+--- Write the current screen to a PNG at `path`; returns true, or nil and an error.
+--- Android apps cannot write /tmp, so on Android this fails with "Screen:shot failed: nil".
+function handlers.capture_png(path)
     -- Capture framebuffer (fbgrab from USBNet)
     local fbgrab = "/mnt/us/usbnet/bin/fbgrab"
     local fbgrab_file = io.open(fbgrab, "r")
     if fbgrab_file then
         fbgrab_file:close()
-        local ok = os.execute(fbgrab .. " " .. ss_path)
+        local ok = os.execute(fbgrab .. " " .. path)
         -- Lua 5.1: os.execute returns exit status as number (0 = success)
         if ok ~= 0 and ok ~= true then
-            return nil, {code = -32603, message = "fbgrab failed (exit: " .. tostring(ok) .. ")"}
+            return nil, "fbgrab failed (exit: " .. tostring(ok) .. ")"
         end
     else
         -- No fbgrab (the emulator): KOReader writes its own screen buffer to PNG.
         if not Device or not Device.screen or not Device.screen.shot then
-            return nil, {code = -32603, message = "no fbgrab and no KOReader screen API"}
+            return nil, "no fbgrab and no KOReader screen API"
         end
-        os.remove(ss_path)  -- a leftover file would hide a failed shot
-        local shot_ok, shot_err = pcall(function() Device.screen:shot(ss_path) end)
-        local png = shot_ok and io.open(ss_path, "rb")
+        os.remove(path)  -- a leftover file would hide a failed shot
+        local shot_ok, shot_err = pcall(function() Device.screen:shot(path) end)
+        local png = shot_ok and io.open(path, "rb")
         if not png then
-            return nil, {code = -32603, message = "Screen:shot failed: " .. tostring(shot_err)}
+            return nil, "Screen:shot failed: " .. tostring(shot_err)
         end
         png:close()
+    end
+    return true
+end
+
+--- capture_screenshot: Capture e-ink framebuffer, return base64 PNG
+--- The gateway converts this to an MCP image content block
+function handlers.capture_screenshot(params)
+    local ss_path = "/tmp/mcp_ss.png"
+    local captured, capture_err = handlers.capture_png(ss_path)
+    if not captured then
+        return nil, {code = -32603, message = capture_err}
     end
     -- Base64 encode the PNG
     local handle = io.popen("base64 " .. ss_path)
