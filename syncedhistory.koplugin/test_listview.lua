@@ -112,6 +112,81 @@ test("rows: on this device vs missing", function()
     eq(rows[2].dim, true, "missing rows are greyed")
 end)
 
+local function mergedRow()
+    return {
+        document = "new", filename = "Steve Jobs - Walter Isaacson.epub", percentage = 0.37,
+        device = "Kindle", timestamp = 5,
+        aliases = {
+            { document = "new", filename = "Steve Jobs - Walter Isaacson.epub" },
+            { document = "old", filename = "Walter Isaacson - Steve Jobs.epub" },
+        },
+    }
+end
+
+test("aliases: the newer name local", function()
+    local lookup = lookupFrom({ new = "/lib/Steve Jobs - Walter Isaacson.epub" })
+    local r = ListView.rows({ mergedRow() }, { lookup = lookup })[1]
+    eq(r.path, "/lib/Steve Jobs - Walter Isaacson.epub")
+    eq(r.local_document, "new")
+    eq(r.text, "Steve Jobs - Walter Isaacson.epub")
+    eq(r.mandatory, "37% · Kindle · on this device")
+    eq(#r.keys, 2, "both keys kept for removing")
+end)
+
+test("aliases: only the older name local shows that name", function()
+    local lookup, calls = lookupFrom({ old = "/lib/Walter Isaacson - Steve Jobs.epub" })
+    local r = ListView.rows({ mergedRow() }, { lookup = lookup })[1]
+    eq(r.path, "/lib/Walter Isaacson - Steve Jobs.epub")
+    eq(r.local_document, "old")
+    eq(r.text, "Walter Isaacson - Steve Jobs.epub", "the local alias's name")
+    eq(r.missing, false)
+    eq(calls[1], "new", "newest alias looked up first")
+    -- The alias has no file name on the server: the local file's name.
+    local row = mergedRow()
+    row.aliases[2].filename = nil
+    r = ListView.rows({ row }, { lookup = lookup })[1]
+    eq(r.text, "Walter Isaacson - Steve Jobs.epub")
+end)
+
+test("aliases: neither name local", function()
+    local lookup, calls = lookupFrom({})
+    local r = ListView.rows({ mergedRow() }, { lookup = lookup })[1]
+    eq(r.path, nil)
+    eq(r.missing, true)
+    eq(r.text, "Steve Jobs - Walter Isaacson.epub", "the newest name")
+    eq(#calls, 2, "every alias looked up")
+end)
+
+test("aliases: none from an older server, the document alone", function()
+    local lookup, calls = lookupFrom({ solo = "/lib/Emma.epub" })
+    local r = ListView.rows({ { document = "solo", filename = "Emma.epub" } }, { lookup = lookup })[1]
+    eq(r.path, "/lib/Emma.epub")
+    eq(#calls, 1)
+    eq(#r.keys, 1)
+    eq(r.keys[1].document, "solo")
+    -- An empty aliases list counts as none.
+    r = ListView.rows({ { document = "solo", aliases = {} } }, { lookup = lookup })[1]
+    eq(r.keys[1].document, "solo")
+end)
+
+test("localMatch: on a built row, looks again across every alias", function()
+    local r = ListView.rows({ mergedRow() }, { lookup = lookupFrom({}) })[1]
+    -- The file appeared since the list was built, under the older name.
+    local path, key = ListView.localMatch(r, lookupFrom({ old = "/lib/W.epub" }))
+    eq(path, "/lib/W.epub")
+    eq(key, "old")
+end)
+
+test("removeText: names the file-name count only for a merged book", function()
+    local rows = ListView.rows({ mergedRow(), { document = "solo", filename = "Emma.epub", timestamp = 1 } },
+        { lookup = lookupFrom({}) })
+    local merged, single = ListView.removeText(rows[1]), ListView.removeText(rows[2])
+    check(merged:find("all 2 file names", 1, true), merged)
+    check(merged:find("Steve Jobs - Walter Isaacson.epub", 1, true), merged)
+    check(not single:find("file names", 1, true), single)
+    check(single:find("next progress push", 1, true), "no word on a book still being read")
+end)
+
 test("rows: no file name or device on the server", function()
     local rows = ListView.rows({
         { document = "x", timestamp = 1 },

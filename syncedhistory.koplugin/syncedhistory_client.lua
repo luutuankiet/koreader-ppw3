@@ -3,10 +3,13 @@ Server client for the synced reading list.
 
 Talks to the progress sync server that KOReader's built-in progress sync
 (kosync.koplugin) is logged into, with that plugin's server, user name and
-user key. Two routes, both added to kosyncd for this plugin:
+user key. Three routes, all added to kosyncd for this plugin:
 
-    GET /syncs/list          every book of the user that has progress
-    PUT /syncs/documents     {document, filename}: remember a book's file name
+    GET    /syncs/list                  every book of the user that has progress;
+                                        a book saved under several file names is
+                                        one item whose aliases list every key
+    PUT    /syncs/documents             {document, filename}: remember a book's file name
+    DELETE /syncs/documents/{document}  forget one key: its progress and file name
 
 Every dependency is injected, so the module runs outside KOReader:
 
@@ -21,6 +24,7 @@ Every dependency is injected, so the module runs outside KOReader:
     }
     client:fetchList(function(list, info) ... end)
     client:pushDocument("/mnt/us/documents/Dune.epub")
+    client:removeDocuments({ key1, key2 }, function(ok, info) ... end)
 
 Never log or show the user key. Lua 5.1 only.
 ]]
@@ -41,6 +45,7 @@ Client.MSG_LOGIN = "Synced reading list uses the built-in progress sync. Set its
 Client.MSG_METHOD = "Progress sync must match documents by file name (Progress sync > Document matching method)."
 Client.MSG_CACHED = "Could not reach the sync server. Showing the cached list."
 Client.MSG_NO_CACHE = "Could not reach the sync server, and there is no cached list yet."
+Client.MSG_REMOVE_FAILED = "Could not remove the book from the sync server. It is still in the list."
 
 local function noop() end
 
@@ -120,13 +125,26 @@ local function headersFor(creds, with_body)
 end
 
 -- Keep only plain fields, so the cache never holds a JSON null sentinel
--- that LuaSettings cannot write.
+-- that LuaSettings cannot write. aliases stays nil when the server sent
+-- none (a server older than the merge), so callers fall back to document.
+local function str(v) return type(v) == "string" and v or nil end
+local function num(v) return type(v) == "number" and v or nil end
+
+local function cleanAliases(list)
+    if type(list) ~= "table" then return nil end
+    local out = {}
+    for _, a in ipairs(list) do
+        if type(a) == "table" and type(a.document) == "string" and a.document ~= "" then
+            out[#out + 1] = { document = a.document, filename = str(a.filename) }
+        end
+    end
+    return #out > 0 and out or nil
+end
+
 local function cleanRow(row)
     if type(row) ~= "table" or type(row.document) ~= "string" or row.document == "" then
         return nil
     end
-    local function str(v) return type(v) == "string" and v or nil end
-    local function num(v) return type(v) == "number" and v or nil end
     return {
         document = row.document,
         percentage = num(row.percentage),
@@ -134,8 +152,10 @@ local function cleanRow(row)
         device_id = str(row.device_id),
         timestamp = num(row.timestamp),
         filename = str(row.filename),
+        aliases = cleanAliases(row.aliases),
     }
 end
+Client._cleanRow = cleanRow
 
 --- The cached list and when it was fetched (seconds since the epoch), or nil.
 function Client:cachedList()
@@ -239,6 +259,87 @@ function Client:pushDocument(path, done)
             done(false)
         end
     end)
+end
+
+-- Drop the given keys from the cached list, so a removed book does not come
+-- back from the cache when the next fetch fails.
+function Client:forgetCached(keys)
+    local items, fetched_at = self:cachedList()
+    if not items then return end
+    local gone = {}
+    for _, k in ipairs(keys) do gone[k] = true end
+    local kept = {}
+    for _, row in ipairs(items) do
+        local hit = gone[row.document]
+        for _, a in ipairs(type(row.aliases) == "table" and row.aliases or {}) do
+            if gone[a.document] then hit = true end
+        end
+        if not hit then kept[#kept + 1] = row end
+    end
+    self.settings:saveSetting(Client.CACHE_KEY, { items = kept, fetched_at = fetched_at })
+    self.settings:flush()
+end
+
+--[[--
+Remove a book from the server list: one DELETE per key, one after the other.
+
+`done(ok, info)` runs once every request has ended. ok is true only when
+every key was deleted (a 200, even for a key the server no longer had).
+info = { removed = keys deleted, failed = keys not deleted, status, err,
+message = text to show when ok is false }. The cached list loses the book
+only when ok is true.
+]]
+function Client:removeDocuments(keys, done)
+    done = done or noop
+    local creds, message, reason = self:credentials()
+    if not creds then
+        self.log.warn("syncedhistory: remove skipped:", reason)
+        done(false, { removed = {}, failed = keys or {}, reason = reason, message = message })
+        return
+    end
+    local todo, removed, failed = {}, {}, {}
+    for _, k in ipairs(keys or {}) do
+        if type(k) == "string" and k ~= "" then todo[#todo + 1] = k end
+    end
+    local last
+    local function finish()
+        local ok = #failed == 0 and #removed > 0
+        -- A partly removed book stays in the cache: the row must not vanish
+        -- while the server still holds one of its keys.
+        if ok then self:forgetCached(removed) end
+        self.log.info("syncedhistory: removed", #removed, "of", #todo, "keys")
+        done(ok, {
+            removed = removed,
+            failed = failed,
+            status = last and last.status,
+            err = last and last.err,
+            message = not ok and Client.MSG_REMOVE_FAILED or nil,
+        })
+    end
+    local i = 0
+    local function step()
+        i = i + 1
+        local key = todo[i]
+        if not key then finish(); return end
+        self.request({
+            method = "DELETE",
+            -- A key is 32 hex characters; nothing in it needs escaping.
+            url = creds.server .. "/syncs/documents/" .. key,
+            headers = headersFor(creds, false),
+            timeout = Client.TIMEOUT,
+        }, function(res)
+            res = res or {}
+            if res.status == 200 then
+                removed[#removed + 1] = key
+            else
+                last = res
+                failed[#failed + 1] = key
+                self.log.warn("syncedhistory: delete failed:", key, res.status, res.err)
+            end
+            step()
+        end)
+    end
+    step()
 end
 
 return Client
