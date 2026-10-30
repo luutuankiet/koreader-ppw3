@@ -69,6 +69,14 @@ function ListView.percent(p)
     return string.format("%d%%", math.floor(p * 100 + 1e-9))
 end
 
+--- "Kindle (99ED)": the device model and the last 4 characters of its
+--- progress sync device id, which tell two devices of one model apart.
+--- Just the model when the server sent no id.
+function ListView.deviceLabel(device, device_id)
+    if type(device_id) ~= "string" or #device_id < 4 then return device end
+    return device .. " (" .. device_id:sub(-4) .. ")"
+end
+
 -- Newest first by timestamp; rows without one go last; ties keep the
 -- server's order, which is newest first too.
 local function sortNewestFirst(list)
@@ -112,7 +120,7 @@ function ListView.rows(list, opts)
                 text = name or (path and path:match("([^/]+)$")) or _(ListView.UNKNOWN),
                 mandatory = table.concat({
                     ListView.percent(row.percentage),
-                    device,
+                    ListView.deviceLabel(device, row.device_id),
                     path and _(ListView.ON_DEVICE) or _(ListView.MISSING),
                 }, " · "),
                 dim = path == nil or nil,
@@ -124,6 +132,7 @@ function ListView.rows(list, opts)
                 -- As the server sent them, for the long-press details.
                 device = type(row.device) == "string" and row.device ~= "" and row.device or nil,
                 timestamp = type(row.timestamp) == "number" and row.timestamp or nil,
+                device_id = type(row.device_id) == "string" and row.device_id ~= "" and row.device_id or nil,
             }
         end
     end
@@ -226,7 +235,8 @@ function ListView.details(row, opts)
         tostring(row.text),
         "",
         template(_(ListView.DETAIL_PROGRESS), ListView.percent(row.percentage)),
-        template(_(ListView.DETAIL_DEVICE), row.device or _(ListView.UNKNOWN_DEVICE)),
+        template(_(ListView.DETAIL_DEVICE),
+            ListView.deviceLabel(row.device or _(ListView.UNKNOWN_DEVICE), row.device_id)),
         template(_(ListView.DETAIL_PUSHED), pushed),
         template(_(ListView.DETAIL_FOLDER), folder),
     }, "\n")
