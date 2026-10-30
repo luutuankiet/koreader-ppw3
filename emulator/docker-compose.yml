@@ -7,15 +7,13 @@ services:
     container_name: koreader-emu
     restart: unless-stopped
     init: true
-    # Host networking: koreader_mcp is reachable at thinkpad:8889 over the tailnet.
+    # Host networking: kindle-gateway runs on this host with host networking too.
     network_mode: host
     environment:
-      MCP_PORT: "8889"
+      MCP_LIVE_MODE: "always"
       MCP_DEVICE_NAME: "emu"
-      # kindle-gateway runs on this host with host networking.
-      MCP_GATEWAY_URL: "http://127.0.0.1:9999"
-      # Registered address: the host's tailnet name, not the LAN IP koreader_mcp discovers.
-      MCP_ADVERTISE_HOST: "thinkpad"
+      MCP_GATEWAY_HOST: "127.0.0.1"
+      MCP_GATEWAY_DEVICE_PORT: "9990"
     volumes:
       # Gitignored. KO_HOME: settings.reader.lua, settings/kosync.lua, history, cache.
       - ./state/koreader-home:/mnt/us/koreader-home
@@ -24,8 +22,8 @@ services:
     labels:
       - "traefik.enable=false"
 
-  # Live view and control of the emulator's screen, no password, like koreader_mcp
-  # on 8889: VNC client at thinkpad:5973, browser at http://thinkpad:6073/.
+  # Live view and control of the emulator's screen, no password:
+  # VNC client at thinkpad:5973, browser at http://thinkpad:6073/.
   # 5900 is taken on the host. No depends_on: starting this service never
   # recreates koreader-emu; it waits for the display itself.
   vnc:

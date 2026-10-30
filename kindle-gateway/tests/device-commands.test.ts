@@ -1,11 +1,10 @@
-import { spawn, spawnSync } from 'child_process';
-import * as fs from 'fs';
-import http from 'http';
-import * as os from 'os';
-import * as path from 'path';
+import { spawnSync } from 'child_process';
+import * as net from 'net';
 import { buildRestartCommand, buildRestartScript, resolvePluginSource } from '../src/device-commands';
+import { startDeviceListener } from '../src/device-link';
 import { DeviceRegistry } from '../src/device-registry';
 import { restartKoreader } from '../src/gateway-server';
+import { closeServer, FakeDevice, Handler, listening } from './helpers/fake-device';
 
 describe('resolvePluginSource', () => {
   const root = '/workspace';
@@ -45,99 +44,74 @@ describe('resolvePluginSource', () => {
 });
 
 describe('buildRestartScript', () => {
-  test('targets the given port and never the hardcoded 8888', () => {
-    const script = buildRestartScript(8889);
-    expect(script).toContain(':8889');
-    expect(script).not.toContain('8888');
-    expect(buildRestartScript(8888)).toContain(':8888');
-  });
-
   test('has no single quote, so buildRestartCommand can wrap it', () => {
-    expect(buildRestartScript(8889)).not.toContain("'");
-    expect(buildRestartCommand(8889)).toBe(`nohup sh -c '${buildRestartScript(8889)}' > /tmp/ko_restart.log 2>&1 &`);
+    expect(buildRestartScript()).not.toContain("'");
+    expect(buildRestartCommand()).toBe(`nohup sh -c '${buildRestartScript()}' > /tmp/ko_restart.log 2>&1 &`);
   });
 
-  test('rejects a bad port', () => {
-    expect(() => buildRestartScript(0)).toThrow();
-    expect(() => buildRestartScript(1.5)).toThrow();
+  test('launches koreader.sh with --kual so the Kindle status bar stays paused', () => {
+    expect(buildRestartScript()).toContain('./koreader.sh --kual');
   });
 
   test('wrapped command is valid sh', () => {
-    const r = spawnSync('sh', ['-n', '-c', buildRestartCommand(8889)]);
+    const r = spawnSync('sh', ['-n', '-c', buildRestartCommand()]);
     expect(r.status).toBe(0);
   });
 
-  // Runs the real script with stand-in netstat/killall/sleep on PATH. netstat lists a process we
-  // cannot see on 8888 (the emulator's host case), our victim on 8889, and a longer port 88890.
-  test('kills only the process listening on the device port', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'restart-'));
-    const victim = spawn('/bin/sleep', ['30']);
-    const decoy = spawn('/bin/sleep', ['30']);
-    try {
-      const netstat = [
-        'Active Internet connections (only servers)',
-        'Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name',
-        'tcp6       0      0 :::8888                 :::*                    LISTEN      -',
-        `tcp        0      0 0.0.0.0:88890           0.0.0.0:*               LISTEN      ${decoy.pid}/other`,
-        `tcp        0      0 0.0.0.0:8889            0.0.0.0:*               LISTEN      ${victim.pid}/./luajit`,
-      ].join('\n');
-      fs.writeFileSync(path.join(dir, 'netstat'), `#!/bin/sh\ncat <<'EOF'\n${netstat}\nEOF\n`, { mode: 0o755 });
-      fs.writeFileSync(path.join(dir, 'killall'), '#!/bin/sh\necho "killall $*" >> "$LOG"\n', { mode: 0o755 });
-      fs.writeFileSync(path.join(dir, 'sleep'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
-      const log = path.join(dir, 'log');
-      const victimExit = new Promise<NodeJS.Signals | null>((resolve) => victim.on('exit', (_c, sig) => resolve(sig)));
-
-      spawnSync('sh', ['-c', buildRestartScript(8889)], {
-        env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, LOG: log },
-      });
-
-      expect(await victimExit).toBe('SIGKILL');
-      expect(decoy.exitCode).toBeNull();
-      expect(decoy.signalCode).toBeNull();
-      expect(fs.readFileSync(log, 'utf8')).toContain('killall luajit');
-    } finally {
-      victim.kill('SIGKILL');
-      decoy.kill('SIGKILL');
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+  test('kills no port: a live-mode device listens on nothing', () => {
+    expect(buildRestartScript()).not.toMatch(/netstat|:\d{4}/);
+    expect(buildRestartScript()).toContain('killall luajit');
   });
 });
 
 describe('restartKoreader against a fake device', () => {
-  const PORT = 18889;
-  const commands: string[] = [];
-  let fake: http.Server;
+  let listener: net.Server;
+  let registry: DeviceRegistry;
+  let port: number;
+  const live: FakeDevice[] = [];
 
-  beforeAll(async () => {
-    fake = http.createServer((req, res) => {
-      let body = '';
-      req.on('data', (c) => { body += c; });
-      req.on('end', () => {
-        const rpc = JSON.parse(body);
-        if (rpc.method === 'run_command') commands.push(rpc.params.command);
-        const result = rpc.method === 'run_command' ? { exit_code: 0, stdout: '' } : { ok: true };
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ jsonrpc: '2.0', id: rpc.id, result }));
-      });
+  beforeEach(async () => {
+    registry = new DeviceRegistry();
+    listener = startDeviceListener(registry, 0, '127.0.0.1');
+    port = await listening(listener);
+  });
+
+  afterEach(async () => {
+    for (const d of live.splice(0)) d.destroy();
+    await closeServer(listener);
+  });
+
+  async function connect(handler: Handler): Promise<FakeDevice> {
+    const d = new FakeDevice(port, handler);
+    live.push(d);
+    await d.hello('emu');
+    return d;
+  }
+
+  test('reports online only when a NEW connection arrives after the restart command', async () => {
+    const commands: string[] = [];
+    await connect((_method, params) => {
+      commands.push(params.command);
+      if (params.command.startsWith('nohup')) {
+        // The restart: this connection dies, a new one arrives a little later.
+        setTimeout(() => {
+          live[0].destroy();
+          setTimeout(() => { void connect(() => ({ exit_code: 0 })); }, 10);
+        }, 10);
+      }
+      return { exit_code: 0, stdout: '' };
     });
-    await new Promise<void>((resolve) => fake.listen(PORT, '127.0.0.1', resolve));
-  });
-
-  afterAll(async () => {
-    await new Promise<void>((resolve) => fake.close(() => resolve()));
-  });
-
-  test('sends the kill step for the device port and reports healthy', async () => {
-    const registry = new DeviceRegistry();
-    registry.register('emu', '127.0.0.1', PORT, ['run_command']);
-    const result = await restartKoreader(registry, 'emu', 10);
+    const result = await restartKoreader(registry, 'emu', 2000);
     const data = JSON.parse((result.content[0] as { text: string }).text);
     expect(data).toEqual({ device: 'emu', restarted: true, status: 'online' });
+    expect(commands.find((c) => c.startsWith('nohup'))).toBe(buildRestartCommand());
+    expect(live).toHaveLength(2);
+  });
 
-    const restart = commands.find((c) => c.startsWith('nohup'));
-    expect(restart).toBe(buildRestartCommand(PORT));
-    expect(restart).toContain(`:${PORT}`);
-    expect(restart).not.toContain('8888');
-    expect(registry.get('emu')!.status).toBe('online');
+  test('reports restart_timeout when the old connection stays and no new one arrives', async () => {
+    await connect(() => ({ exit_code: 0, stdout: '' }));
+    const result = await restartKoreader(registry, 'emu', 30);
+    const data = JSON.parse((result.content[0] as { text: string }).text);
+    expect(data).toEqual({ device: 'emu', restarted: false, status: 'restart_timeout' });
   });
 });

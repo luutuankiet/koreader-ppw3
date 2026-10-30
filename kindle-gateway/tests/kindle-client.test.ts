@@ -1,85 +1,47 @@
-import http from 'http';
+import * as net from 'net';
+import { startDeviceListener } from '../src/device-link';
+import { DeviceRegistry } from '../src/device-registry';
 import { KindleClient } from '../src/kindle-client';
-import { DeviceInfo } from '../src/device-registry';
+import { closeServer, FakeDevice, listening } from './helpers/fake-device';
 
 describe('KindleClient', () => {
-  let server: http.Server;
-  let serverPort: number;
+  let server: net.Server;
+  let registry: DeviceRegistry;
+  let fake: FakeDevice;
 
-  beforeAll((done) => {
-    server = http.createServer((req, res) => {
-      if (req.method === 'GET' && req.url === '/health') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true }));
-        return;
-      }
-
-      if (req.method === 'POST' && req.url === '/jsonrpc') {
-        let body = '';
-        req.on('data', (chunk) => { body += chunk; });
-        req.on('end', () => {
-          const request = JSON.parse(body);
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            jsonrpc: '2.0',
-            id: request.id,
-            result: { method: request.method, echo: true },
-          }));
-        });
-        return;
-      }
-
-      res.writeHead(404);
-      res.end();
-    });
-
-    server.listen(0, () => {
-      serverPort = (server.address() as any).port;
-      done();
-    });
+  beforeEach(async () => {
+    registry = new DeviceRegistry();
+    server = startDeviceListener(registry, 0, '127.0.0.1');
+    fake = new FakeDevice(await listening(server), (method, params) =>
+      method === 'silent' ? undefined : { method, params });
+    await fake.hello('test-kindle');
   });
 
-  afterAll((done) => {
-    server.close(done);
+  afterEach(async () => {
+    fake.destroy();
+    await closeServer(server);
   });
 
-  function makeDevice(): DeviceInfo {
-    return {
-      name: 'test-kindle',
-      ip: '127.0.0.1',
-      port: serverPort,
-      tools: ['read_files'],
-      status: 'online',
-      lastSeen: new Date(),
-      registeredAt: new Date(),
-    };
-  }
-
-  test('healthCheck returns true for healthy server', async () => {
-    const client = new KindleClient(makeDevice());
-    const result = await client.healthCheck();
-    expect(result).toBe(true);
-  });
-
-  test('healthCheck returns false for unreachable server', async () => {
-    const device = makeDevice();
-    device.port = 1; // Unreachable
-    const client = new KindleClient(device);
-    const result = await client.healthCheck();
-    expect(result).toBe(false);
-  });
-
-  test('callTool sends JSON-RPC request and returns response', async () => {
-    const client = new KindleClient(makeDevice());
+  test('callTool returns the reply to its call', async () => {
+    const client = new KindleClient(registry.get('test-kindle')!);
     const response = await client.callTool('read_files', { path: '/test' });
-    expect(response.jsonrpc).toBe('2.0');
-    expect(response.result).toEqual({ method: 'read_files', echo: true });
+    expect(response.result).toEqual({ method: 'read_files', params: { path: '/test' } });
   });
 
-  test('callTool throws on unreachable server', async () => {
-    const device = makeDevice();
-    device.port = 1;
-    const client = new KindleClient(device);
-    await expect(client.callTool('read_files')).rejects.toThrow();
+  test('a device error reply is returned, not thrown', async () => {
+    fake.handler = (_m, _p, id) => { fake.sendJson({ id, error: { code: -32601, message: 'Unknown method' } }); return undefined; };
+    const response = await new KindleClient(registry.get('test-kindle')!).callTool('nope');
+    expect(response.error?.message).toBe('Unknown method');
+  });
+
+  test('no reply throws the timeout message callers show to the agent', async () => {
+    const client = new KindleClient(registry.get('test-kindle')!);
+    await expect(client.callTool('silent', {}, 20)).rejects.toThrow('Tool call to test-kindle timed out after 0.02s');
+  });
+
+  test('a dropped connection throws', async () => {
+    const client = new KindleClient(registry.get('test-kindle')!);
+    fake.handler = () => { fake.destroy(); return undefined; };
+    await expect(client.callTool('x')).rejects.toThrow(/disconnected/);
   });
 });

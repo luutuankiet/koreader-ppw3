@@ -59,21 +59,6 @@ export function createApp(registry: DeviceRegistry, inboxDir: string = packageHo
   // Latest snapshot id per device, shared by every MCP request (the transport is stateless).
   const uiTracker = new SnapshotTracker();
 
-  // --- Registration endpoint ---
-  app.post('/register', (req: Request, res: Response) => {
-    const { name, ip, port, tools } = req.body;
-    if (!name || !ip || !port) {
-      res.status(400).json({ error: 'Missing required fields: name, ip, port' });
-      return;
-    }
-    const device = registry.register(
-      name, ip, port,
-      tools || ['read_files', 'run_command', 'device_status']
-    );
-    console.log(`[registry] Device registered: ${name} at ${ip}:${port}`);
-    res.json({ ok: true, device });
-  });
-
   app.get('/health', (_req: Request, res: Response) => {
     res.json({ ok: true, devices: registry.list().length });
   });
@@ -85,7 +70,7 @@ export function createApp(registry: DeviceRegistry, inboxDir: string = packageHo
     // === Base tools ===
 
     defineTool(server, 'list_devices',
-      'List all registered Kindle devices and their status', {},
+      'List the devices connected right now. A device is listed exactly while its live-mode connection is open.', {},
       async () => ({
         content: [{ type: 'text' as const, text: JSON.stringify(registry.list(), null, 2) }],
       })
@@ -212,7 +197,7 @@ export function createApp(registry: DeviceRegistry, inboxDir: string = packageHo
     // === Device management ===
 
     defineTool(server, 'restart_koreader',
-      'Restart KOReader on a Kindle device. Kills the process on the device\'s koreader_mcp port and luajit, restarts koreader.sh, waits for health check.',
+      'Restart KOReader on a Kindle device. Kills luajit, restarts koreader.sh, waits for the device to reconnect.',
       { device: z.string().describe('Device name') },
       async (args) => await restartKoreader(registry, args.device!)
     );
@@ -292,13 +277,11 @@ async function forwardToolCall(
   params: Record<string, unknown>
 ): Promise<ToolResult> {
   const device = registry.get(deviceName);
-  if (!device) return errResult(`Device '${deviceName}' not found`);
-  if (device.status === 'offline') return errResult(`Device '${deviceName}' is offline`);
+  if (!device) return errResult(`Device '${deviceName}' is not connected`);
 
   const client = new KindleClient(device);
   try {
     const response = await client.callTool(method, params);
-    registry.updateLastSeen(deviceName);
     if (response.error) return errResult(`Device error: ${response.error.message}`);
     return {
       content: [{
@@ -308,7 +291,6 @@ async function forwardToolCall(
     };
   } catch (err) {
     console.error(`[forward] Failed to reach ${deviceName}:`, err);
-    registry.markOffline(deviceName);
     return errResult(`Failed to reach '${deviceName}': ${err instanceof Error ? err.message : String(err)}`);
   }
 }
@@ -322,14 +304,12 @@ async function forwardWithScreenshot(
   params: Record<string, unknown>
 ): Promise<ToolResult> {
   const device = registry.get(deviceName);
-  if (!device) return errResult(`Device '${deviceName}' not found`);
-  if (device.status === 'offline') return errResult(`Device '${deviceName}' is offline`);
+  if (!device) return errResult(`Device '${deviceName}' is not connected`);
 
   const client = new KindleClient(device);
   try {
     // 1. Forward the L3 call
     const response = await client.callTool(method, params, 15000);
-    registry.updateLastSeen(deviceName);
 
     if (response.error) return errResult(`Device error: ${response.error.message}`);
 
@@ -364,7 +344,6 @@ async function forwardWithScreenshot(
     return { content };
   } catch (err) {
     console.error(`[forwardWithSS] Failed for ${deviceName}:`, err);
-    registry.markOffline(deviceName);
     return errResult(`Failed to reach '${deviceName}': ${err instanceof Error ? err.message : String(err)}`);
   }
 }
@@ -388,8 +367,7 @@ export async function uiCall(
 ): Promise<ToolResult> {
   const deviceName = args.device;
   const device = registry.get(deviceName);
-  if (!device) return errResult(`Device '${deviceName}' not found`);
-  if (device.status === 'offline') return errResult(`Device '${deviceName}' is offline`);
+  if (!device) return errResult(`Device '${deviceName}' is not connected`);
 
   if (typeof params.ref === 'string') {
     const stale = tracker.checkRef(deviceName, params.ref);
@@ -401,10 +379,8 @@ export async function uiCall(
   try {
     // ui_act replies only once KOReader is idle (capped at 5s on the device).
     response = await client.callTool(method, params, 20000);
-    registry.updateLastSeen(deviceName);
   } catch (err) {
     console.error(`[ui] Failed to reach ${deviceName}:`, err);
-    registry.markOffline(deviceName);
     return errResult(`Failed to reach '${deviceName}': ${err instanceof Error ? err.message : String(err)}`);
   }
   if (response.error) return errResult(response.error.message);
@@ -468,13 +444,11 @@ async function captureScreenshotTool(
   deviceName: string
 ): Promise<ToolResult> {
   const device = registry.get(deviceName);
-  if (!device) return errResult(`Device '${deviceName}' not found`);
-  if (device.status === 'offline') return errResult(`Device '${deviceName}' is offline`);
+  if (!device) return errResult(`Device '${deviceName}' is not connected`);
 
   const client = new KindleClient(device);
   try {
     const resp = await client.callTool('capture_screenshot', {}, 30000);
-    registry.updateLastSeen(deviceName);
     if (resp.error) return errResult(`Screenshot failed: ${resp.error.message}`);
 
     const ss = resp.result as { image_base64?: string; mime_type?: string; size_bytes?: number };
@@ -496,10 +470,10 @@ async function captureScreenshotTool(
 export async function restartKoreader(
   registry: DeviceRegistry,
   deviceName: string,
-  pollIntervalMs: number = 5000
+  reconnectTimeoutMs: number = 60000
 ): Promise<ToolResult> {
   const device = registry.get(deviceName);
-  if (!device) return errResult(`Device '${deviceName}' not found`);
+  if (!device) return errResult(`Device '${deviceName}' is not connected`);
 
   const client = new KindleClient(device);
   console.log(`[restart] Scheduling KOReader restart on ${deviceName}`);
@@ -511,38 +485,21 @@ export async function restartKoreader(
     }, 5000);
   } catch { /* best effort */ }
 
-  // Schedule restart with delay (so MCP can respond before dying)
+  // Schedule restart with delay (so the reply can get out before KOReader dies)
+  const requestedAt = new Date();
   try {
-    // Kills whatever holds the device's own koreader_mcp port, then any luajit left over.
-    await client.callTool('run_command', { command: buildRestartCommand(device.port) }, 5000);
+    await client.callTool('run_command', { command: buildRestartCommand() }, 5000);
   } catch {
-    // May timeout if restart is fast
+    // May time out if the restart is fast
   }
 
-  // Mark offline during restart
-  registry.markOffline(deviceName);
-
-  // Poll for health (KOReader takes ~15-20s to boot on Kindle)
-  console.log(`[restart] Waiting for ${deviceName} to come back...`);
-  let healthy = false;
-  for (let attempt = 0; attempt < 10; attempt++) {
-    await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
-    try {
-      const resp = await client.callTool('device_status', {}, 5000);
-      if (!resp.error) {
-        healthy = true;
-        registry.updateLastSeen(deviceName);
-        // Re-register with updated tool list
-        registry.register(device.name, device.ip, device.port, device.tools);
-        break;
-      }
-    } catch { /* still restarting */ }
-  }
-
+  // The restart closes the connection; coming back means a new connection for this name.
+  console.log(`[restart] Waiting for ${deviceName} to reconnect...`);
+  const back = await registry.waitForConnection(deviceName, requestedAt, reconnectTimeoutMs);
   return {
     content: [{
       type: 'text' as const,
-      text: JSON.stringify({ device: deviceName, restarted: healthy, status: healthy ? 'online' : 'restart_timeout' }, null, 2),
+      text: JSON.stringify({ device: deviceName, restarted: !!back, status: back ? 'online' : 'restart_timeout' }, null, 2),
     }],
   };
 }
@@ -555,8 +512,7 @@ async function deployPlugin(
   source?: string
 ): Promise<ToolResult> {
   const device = registry.get(deviceName);
-  if (!device) return errResult(`Device '${deviceName}' not found`);
-  if (device.status === 'offline') return errResult(`Device '${deviceName}' is offline`);
+  if (!device) return errResult(`Device '${deviceName}' is not connected`);
 
   const pluginDir = `${pluginName}.koplugin`;
   // Plugins live at workspace root (flat layout), or at an explicit workspace-relative `source`.
@@ -580,7 +536,7 @@ async function deployPlugin(
   const deployed: string[] = [];
   const errors: string[] = [];
 
-  // Step 2: Pre-deploy cleanup — free /tmp, kill stale port listeners
+  // Step 2: Pre-deploy cleanup: free /tmp
   console.log(`[deploy] Pre-deploy cleanup on ${deviceName}`);
   try {
     const cleanResp = await client.callTool('run_command', {
