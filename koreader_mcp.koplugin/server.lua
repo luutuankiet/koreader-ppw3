@@ -214,7 +214,8 @@ function server:poll()
         if not ok then
             log("Error handling client: " .. tostring(err))
         end
-        client:close()
+        -- A deferred reply (ui_act) keeps the socket and closes it itself.
+        if not (ok and err == "deferred") then client:close() end
     end
 end
 
@@ -258,7 +259,7 @@ function server:handle_client(client)
             port = self.port,
         })
     elseif method == "POST" and path == "/jsonrpc" then
-        self:handle_jsonrpc(client, body)
+        return self:handle_jsonrpc(client, body)
     else
         self:send_response(client, 404, {error = "Not found"})
     end
@@ -278,6 +279,23 @@ function server:handle_jsonrpc(client, body)
     local rpc_method = request.method
     local params = request.params or {}
     local id = request.id
+
+    -- Deferred methods reply later from a UIManager task, so the loop keeps
+    -- running while they wait for the UI to settle (no self-call deadlock).
+    if handlers.deferred[rpc_method] then
+        local replied = false
+        local function done(result, rpc_error)
+            if replied then return end
+            replied = true
+            pcall(self.send_response, self, client, 200,
+                rpc_error and {jsonrpc = "2.0", error = rpc_error, id = id}
+                    or {jsonrpc = "2.0", result = result, id = id})
+            client:close()
+        end
+        local ok, err = pcall(handlers.deferred[rpc_method], params, done)
+        if not ok then done(nil, {code = -32603, message = "Internal error: " .. tostring(err)}) end
+        return "deferred"
+    end
 
     local result, rpc_error = handlers.dispatch(rpc_method, params)
     if rpc_error then
