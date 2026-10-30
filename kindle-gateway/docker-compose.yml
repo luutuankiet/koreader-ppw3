@@ -17,8 +17,8 @@ services:
     volumes:
       - ${WORKSPACE_DIR:-..}:/workspace:ro
       # Plugin packages written by scripts/publish.sh, served at /pkg/.
-      - ${PKG_HOST_DIR:-${HOME}/kindle-packages/pkg}:/packages:ro
+      - ${PKG_HOST_DIR:-../tmp/packages/pkg}:/packages:ro
       # Diagnostics bundles uploaded by devices to /inbox/<device>/.
-      - ${INBOX_HOST_DIR:-${HOME}/kindle-packages/inbox}:/inbox
+      - ${INBOX_HOST_DIR:-../tmp/packages/inbox}:/inbox
     labels:
       - "traefik.enable=false"
