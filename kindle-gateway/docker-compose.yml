@@ -4,11 +4,20 @@ services:
     container_name: kindle-gateway
     restart: unless-stopped
     network_mode: host
+    # Runs as the host user so inbox bundles land owned by you, not root.
+    user: "${GATEWAY_UID:-1000}:${GATEWAY_GID:-1000}"
     environment:
       - PORT=${GATEWAY_PORT:-9999}
       - PLUGINS_SRC=/workspace
       - EINK_DELAY=${EINK_DELAY:-1500}
+      - PKG_DIR=/packages
+      - INBOX_DIR=/inbox
+      - INBOX_MAX_BYTES=${INBOX_MAX_BYTES:-10485760}
     volumes:
       - ${WORKSPACE_DIR:-..}:/workspace:ro
+      # Plugin packages written by scripts/publish.sh, served at /pkg/.
+      - ${PKG_HOST_DIR:-${HOME}/kindle-packages/pkg}:/packages:ro
+      # Diagnostics bundles uploaded by devices to /inbox/<device>/.
+      - ${INBOX_HOST_DIR:-${HOME}/kindle-packages/inbox}:/inbox
     labels:
       - "traefik.enable=false"

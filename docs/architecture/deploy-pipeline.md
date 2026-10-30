@@ -1,7 +1,7 @@
 ---
 title: Plugin deploy pipeline
-covers: how a plugin directory gets onto a Kindle, where the gateway reads plugin source, shell fallbacks
-verified: 2026-10-28
+covers: how a plugin directory gets onto a Kindle, where the gateway reads plugin source, shell fallbacks, plugin packages and the upload inbox
+verified: 2026-10-31
 ---
 
 # Plugin deploy pipeline
@@ -13,6 +13,16 @@ verified: 2026-10-28
 - Destination is `/mnt/us/koreader/plugins/<name>.koplugin` on the device, named by `plugin` even when `source` is set.
 - The restart kills whatever listens on the device's registered port (`buildRestartScript`), then `killall luajit`, then runs `koreader.sh`.
 - Fallbacks without the gateway: `scripts/deploy-to-kindle.sh` (the MCP plugin) and `scripts/deploy-rssreader.sh` (tarball path for the reader). Both take an SSH alias as argument.
+
+## Packages for the on-device installer
+
+Kindles reach only the LAN and run no agent server, so they pull plugins instead of receiving pushes.
+
+- `scripts/publish.sh <plugin>...` (bare name, `<name>.koplugin`, or a path to a `.koplugin` folder such as the separate `rssreader.koplugin` repo) writes `<name>-<version>.tar.gz` into `PKG_DIR` (default `~/kindle-packages/pkg`), then rebuilds `index.json` from every archive there: one entry per plugin, its highest version, with `size`, `sha256`, `description`, `fullname` and `min_koreader` from `_meta.lua`.
+- An archive holds only the files git would commit, so gitignored personal config (rssreader's `rssreader_configuration.lua`, which holds credentials) never ships; dotfiles, tests, `*.patch` and `*.md` are dropped too. Its only top-level entry is `<name>.koplugin/`.
+- The version is `version = "..."` in `_meta.lua`; a plugin without one is refused. Builds are byte-for-byte reproducible, and changed content under an already-published version is refused unless `--force`: bump the version.
+- The gateway serves the folder read-only at `GET /pkg/` and stores `PUT /inbox/<device>/<timestamp>.tar.gz` in `INBOX_HOST_DIR` (gzip only, never overwrites, `INBOX_MAX_BYTES` cap). Both routes live in `kindle-gateway/src/package-host.ts`, mounted in `src/index.ts` ahead of the gateway app, whose JSON body parser would otherwise swallow an upload.
+- Installing replaces the whole `<name>.koplugin/` folder, so a plugin that keeps user config inside its folder (rssreader does) loses it unless the installer carries those files across.
 
 ## After a gateway code change
 
