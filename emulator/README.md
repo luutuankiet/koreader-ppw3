@@ -11,8 +11,12 @@ mkdir -p state/koreader-home library   # create as your user before the first st
 docker compose up -d --build           # start (rebuilds on change)
 docker compose logs -f                 # supervisor + KOReader log
 docker compose down                    # stop
-curl -s http://thinkpad:8889/health    # koreader_mcp, from any tailnet host
 ```
+
+The emulator opens no port for the agent: `koreader_mcp` dials out to the gateway and
+stays connected. To see that it is up, call the gateway's `list_devices`; `emu` is listed
+exactly while its connection is open. No connection appears in `docker compose logs` as
+a retry every 60 s.
 
 Screenshot of the virtual screen (until koreader_mcp's own screenshot works here):
 
@@ -33,16 +37,21 @@ docker exec koreader-emu sh -c 'xwd -root -silent -display "$DISPLAY" | convert 
   (`checksum_method = 1`) with no server or account. Delete `state/koreader-home` to reseed.
 - `supervisor.sh` is the entrypoint: starts Xvfb on `:73`, then relaunches
   `./luajit ./reader.lua` 2 s after every exit. It rewrites
-  `koreader_mcp.koplugin/config.lua` before each launch from `MCP_PORT` (8889),
-  `MCP_DEVICE_NAME` (`emu`), `MCP_GATEWAY_URL` and `MCP_ADVERTISE_HOST` (set in
-  `docker-compose.yml`). `MCP_ADVERTISE_HOST=thinkpad` makes it register as
-  `thinkpad:8889` instead of the LAN IP koreader_mcp discovers.
+  `koreader_mcp.koplugin/config.lua` before each launch from the variables below (set
+  in `docker-compose.yml`), so a gateway deploy of `koreader_mcp` keeps these values.
+
+  | variable | default | what |
+  |---|---|---|
+  | `MCP_LIVE_MODE` | `always` | `always`: stay connected, never end on idle or battery, keep retrying. `off`: no connection and no timers, as a Kindle outside a session |
+  | `MCP_DEVICE_NAME` | `emu` | name in `list_devices` |
+  | `MCP_GATEWAY_HOST` | `127.0.0.1` | gateway host to dial |
+  | `MCP_GATEWAY_DEVICE_PORT` | `9990` | the gateway's `DEVICE_PORT` |
+
 - No `fbgrab` here: `capture_screenshot` falls back to KOReader's own `Screen:shot`.
 - `/mnt/us/koreader/koreader.sh` is a no-op shim: the gateway restart runs
-  kills the process on the device's port, then `killall luajit; ./koreader.sh`, and the
-  supervisor already relaunches.
-- Host networking: 8888 is taken on the thinkpad, hence 8889. Display `:73` because
-  X's abstract socket is shared with the host's network namespace.
+  `killall luajit; ./koreader.sh`, and the supervisor already relaunches.
+- Host networking, so `127.0.0.1` reaches a gateway on the same host. Display `:73`
+  because X's abstract socket is shared with the host's network namespace.
 - The `vnc` service shows the screen live and accepts input, with no password:
   VNC client at `thinkpad:5973`, browser at `http://thinkpad:6073/` (5900 is taken
   on the thinkpad). It waits for `:73` itself, so start it alone with

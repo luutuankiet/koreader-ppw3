@@ -22,8 +22,8 @@ services:
     labels:
       - "traefik.enable=false"
 
-  # Live view and control of the emulator's screen, no password, like koreader_mcp
-  # on 8889: VNC client at thinkpad:5973, browser at http://thinkpad:6073/.
+  # Live view and control of the emulator's screen, no password:
+  # VNC client at thinkpad:5973, browser at http://thinkpad:6073/.
   # 5900 is taken on the host. No depends_on: starting this service never
   # recreates koreader-emu; it waits for the display itself.
   vnc:
