@@ -10,4 +10,4 @@ KOReader makes the progress sync `device_id` once, at random, and keeps it in `s
 
 Fix on Kindles: `syncedhistory.koplugin` (`syncedhistory_deviceid.lua`) sets the id to the uppercase md5 of `"kosync:"` plus the hardware serial in `/proc/usid` every time the plugin loads, so a restored id is replaced on the next start. It runs when the plugin file loads, before KOReader builds any plugin instance, so the built-in sync already uses the new id at the first book open. The synced reading list shows the last 4 characters of each row's id, which tells two devices of one model apart.
 
-Elsewhere (Android, the emulator: no `/proc/usid`): delete the `device_id` line from the restored `settings.reader.lua` while KOReader is stopped; KOReader makes a new one at the next start. Keep `device_id` out of any settings backup.
+Elsewhere (Android, the emulator: no `/proc/usid`): delete the `device_id` line from the restored `settings.reader.lua` while KOReader is stopped; KOReader makes a new one at the next start. Keep `device_id`, and the emulator-only `syncedhistory_serial_path` that points the plugin at a fake serial, out of any settings backup.
