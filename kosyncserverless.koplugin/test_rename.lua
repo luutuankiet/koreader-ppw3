@@ -56,6 +56,7 @@ local SOURCES = {
     "kosyncserverless_carryover.lua",
     "kosyncserverless_http.lua",
     "kosyncserverless_retry.lua",
+    "kosyncserverless_sleep.lua",
 }
 
 local src = {}

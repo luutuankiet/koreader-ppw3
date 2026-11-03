@@ -18,6 +18,7 @@ local time = require("ui/time")
 local util = require("util")
 local CarryOver = require("kosyncserverless_carryover")
 local Retry = require("kosyncserverless_retry")
+local Sleep = require("kosyncserverless_sleep")
 local T = require("ffi/util").template
 local _ = require("gettext")
 
@@ -75,6 +76,25 @@ KOSyncServerless.builtin_settings_file = DataStorage:getSettingsDir() .. "/kosyn
 -- Shown at most once per KOReader process.
 local coexistence_warned = false
 
+-- Push before sleep. The Sleep menu item and AutoSuspend call
+-- UIManager:suspend() directly, and RequestSuspend reaches DeviceListener
+-- before any plugin (ReaderUI registers it first), so the one place that sees
+-- every sleep KOReader starts is UIManager.suspend itself. It is wrapped once
+-- per process and hands off to the plugin instance of the open book, if any.
+local sleep_owner = nil
+local original_suspend = nil
+local function installSuspendHook()
+    if original_suspend then return end
+    original_suspend = UIManager.suspend
+    UIManager.suspend = function(uimanager)
+        local owner = sleep_owner
+        if owner and owner:holdSleep(function() original_suspend(uimanager) end) then
+            return
+        end
+        return original_suspend(uimanager)
+    end
+end
+
 function KOSyncServerless:loadSettings()
     if not KOSyncServerless.settings_obj then
         KOSyncServerless.settings_obj = LuaSettings:open(self.settings_file)
@@ -121,6 +141,8 @@ function KOSyncServerless:init()
     end
 
     self.ui.menu:registerToMainMenu(self)
+    installSuspendHook()
+    sleep_owner = self
 end
 
 function KOSyncServerless:getSyncPeriod()
@@ -1005,24 +1027,79 @@ function KOSyncServerless:_onCloseDocument()
     --       and we handle those system focus events via... Suspend & Resume events, so we need to neuter those handlers early.
     self.onResume = nil
     self.onSuspend = nil
-    -- If we're already online, push normally.
-    -- Otherwise, queue progress for later instead of blocking with goOnlineToRun.
-    if NetworkMgr:isOnline() then
-        self:updateProgress(false, false)
+    -- Push the final position when connected, without the debounce (a push
+    -- from a page turn a few seconds ago would otherwise hide the last pages).
+    -- Otherwise queue it for the next connect instead of turning Wi-Fi on.
+    -- pushNow queues on failure too.
+    self:pushOrQueue("close")
+end
+
+-- Best-effort push in the background, never turning Wi-Fi on: pushNow when
+-- connected (it queues on failure), straight to the queue when not.
+function KOSyncServerless:pushOrQueue(why, done)
+    if not self.settings.username or not self.settings.userkey then return end
+    if NetworkMgr:isWifiOn() and NetworkMgr:isConnected() then
+        logger.dbg("KOSyncServerless: background push on", why)
+        self:pushNow(function(ok, res)
+            logger.dbg("KOSyncServerless: background push on", why, "ok:", ok, "status:", res.status, "err:", res.err)
+            if done then done(ok) end
+        end)
     else
-        local doc_digest = self:getDocumentDigest()
-        if doc_digest then
-            local KOSyncServerlessQueue = require("KOSyncServerlessQueue")
-            KOSyncServerlessQueue:push({
-                document = doc_digest,
-                metadata = self:getMetadata(),
-                progress = self:getLastProgress(),
-                percentage = self:getLastPercent(),
-                device = self.settings.kosync_hostname or Device.model,
-                device_id = self.device_id,
-            })
+        local item = self:currentProgressItem()
+        if item.document then
+            logger.dbg("KOSyncServerless: offline, queued progress on", why)
+            require("KOSyncServerlessQueue"):push(item)
         end
+        if done then done(false) end
     end
+end
+
+--[[--
+Called by the UIManager.suspend wrapper for every sleep KOReader starts.
+Returns true when it takes over (the wrapper must not suspend): input is
+frozen, the push runs with retries, and do_suspend() is called exactly once,
+on the answer or at Retry.SLEEP_CAP_S. Returns false when sleep should go
+ahead now: auto sync off, not logged in, no book, Wi-Fi off or not connected.
+]]
+function KOSyncServerless:holdSleep(do_suspend)
+    if self.sleep_hold then
+        logger.info("KOSyncServerless: sleep already held, request ignored")
+        return true
+    end
+    local wifi_on = NetworkMgr:isWifiOn()
+    local hold, why = Sleep.should_hold{
+        auto_sync = self.settings.auto_sync,
+        logged_in = self.settings.username and self.settings.userkey and true or false,
+        has_document = self.ui.document ~= nil,
+        wifi_on = wifi_on,
+        connected = wifi_on and NetworkMgr:isConnected(),
+    }
+    if not hold then
+        logger.info("KOSyncServerless: sleep now, no hold:", why)
+        return false
+    end
+    logger.info("KOSyncServerless: sleep held, pushing progress first")
+    local started = UIManager:getElapsedTimeSinceBoot()
+    self.sleep_hold = Sleep.hold{
+        push = function(cb) return self:pushNow(cb) end,
+        suspend = function(reason)
+            -- the Suspend that follows must not push a second time
+            self.sleep_pushed = true
+            logger.info("KOSyncServerless: sleep now after hold:", reason,
+                string.format("%.1f s", time.to_s(UIManager:getElapsedTimeSinceBoot() - started)))
+            do_suspend()
+        end,
+        scheduleIn = function(s, fn) UIManager:scheduleIn(s, fn) end,
+        unschedule = function(fn) UIManager:unschedule(fn) end,
+        set_ignore_input = function(b) Device:setIgnoreInput(b) end,
+        on_done = function(reason)
+            self.sleep_hold = nil
+            if reason == "external" then
+                logger.info("KOSyncServerless: device slept on its own during the hold; push continues")
+            end
+        end,
+    }
+    return true
 end
 
 function KOSyncServerless:schedulePeriodicPush()
@@ -1060,6 +1137,7 @@ end
 
 function KOSyncServerless:_onResume()
     logger.dbg("KOSyncServerless: onResume")
+    self.sleep_pushed = nil
     self:warmUp("resume")
     if not self.settings.auto_sync then return end
     -- If we have auto_restore_wifi enabled, skip this to prevent both the "Connecting..." UI to pop-up,
@@ -1076,9 +1154,26 @@ function KOSyncServerless:_onResume()
 end
 
 function KOSyncServerless:_onSuspend()
-    logger.dbg("KOSyncServerless: onSuspend")
-    -- We request an extra flashing refresh on success, to deal with potential ghosting left by the NetworkMgr UI
-    self:updateProgress(true, false, true)
+    if self.sleep_hold then
+        -- Power button or cover while a held sleep was still pushing.
+        self.sleep_hold.external_suspend()
+        return
+    end
+    if self.sleep_pushed then
+        self.sleep_pushed = nil
+        logger.info("KOSyncServerless: onSuspend, already pushed before sleep")
+        return
+    end
+    -- Power button or cover: powerd sleeps on its own schedule and cannot be
+    -- held, so push in the background and do not block. Never turn Wi-Fi on.
+    logger.info("KOSyncServerless: onSuspend, background push")
+    self:pushOrQueue("suspend", function()
+        -- Some hasWifiManager targets implode when suspending with the Wi-Fi
+        -- chip on (upstream turned it off after the suspend push too).
+        if Device:hasWifiManager() then
+            NetworkMgr:disableWifi()
+        end
+    end)
 end
 
 function KOSyncServerless:_onNetworkConnected()
@@ -1178,6 +1273,7 @@ function KOSyncServerless:registerEvents()
 end
 
 function KOSyncServerless:onCloseWidget()
+    if sleep_owner == self then sleep_owner = nil end
     UIManager:unschedule(self.periodic_push_task)
     self.periodic_push_task = nil
 end

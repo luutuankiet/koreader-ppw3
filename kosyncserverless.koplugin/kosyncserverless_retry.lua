@@ -24,6 +24,7 @@ local Retry = {
     BACKOFF_S = { 2, 5 }, -- wait before attempt 2, before attempt 3
     PING_SKIP_S = 600,    -- no warm-up ping when the server answered this recently
     DEBOUNCE_S = 25,      -- automatic push or pull at most this often (upstream value)
+    SLEEP_CAP_S = 30,     -- a held sleep goes ahead after this long, push or not
 }
 
 --- A transport error or a server-side failure is worth another attempt; any
