@@ -1,33 +1,17 @@
 import * as net from 'net';
 import type { DeviceRegistry } from './device-registry';
+import { isRpcResponse, validateHello, type Hello, type RpcResponse } from './device-protocol';
+
+export { validateHello, type Hello, type RpcResponse };
 
 /**
  * Live-mode device connections. A device dials the gateway on DEVICE_PORT and keeps one
  * TCP connection open; the gateway never calls a device. Messages are one JSON object per
- * line, both ways:
- *
- *   device  -> gateway  {"type":"hello","name","id_hash","koreader_version","plugin_versions"}
- *   gateway -> device   {"type":"welcome","name"} or {"type":"refused","reason"} then close
- *   gateway -> device   {"id":N,"method":"...","params":{...}}        (a tool call)
- *   device  -> gateway  {"id":N,"result":...} or {"id":N,"error":{"code","message"}}
- *   device  -> gateway  {"type":"ping"}   answered with {"type":"pong"}
+ * line, both ways; their shapes are listed in device-protocol.ts.
  *
  * A device is online exactly while its connection is open. Any message counts as a sign of
  * life; after `silenceMs` without one the gateway closes the connection.
  */
-
-export interface Hello {
-  name: string;
-  id_hash: string;
-  koreader_version?: string;
-  plugin_versions?: Record<string, string>;
-}
-
-export interface RpcResponse {
-  id: number;
-  result?: unknown;
-  error?: { code: number; message: string; data?: unknown };
-}
 
 export interface LinkOptions {
   /** Close a connection that sent nothing for this long. Spec: 150 s. */
@@ -43,24 +27,6 @@ export const DEFAULT_LINK_OPTIONS: LinkOptions = {
   helloTimeoutMs: 10_000,
   maxLineBytes: 32 * 1024 * 1024,
 };
-
-const NAME_RE = /^[A-Za-z0-9._-]{1,32}$/;
-const HASH_RE = /^[0-9a-f]{8,64}$/;
-
-export function validateHello(msg: unknown): Hello | string {
-  if (!msg || typeof msg !== 'object') return 'hello must be a JSON object';
-  const m = msg as Record<string, unknown>;
-  if (m.type !== 'hello') return 'first message must be {"type":"hello",...}';
-  if (typeof m.name !== 'string' || !NAME_RE.test(m.name)) return 'name must be 1-32 of [A-Za-z0-9._-]';
-  if (typeof m.id_hash !== 'string' || !HASH_RE.test(m.id_hash)) return 'id_hash must be 8-64 lowercase hex characters';
-  const pv = m.plugin_versions;
-  return {
-    name: m.name,
-    id_hash: m.id_hash,
-    koreader_version: typeof m.koreader_version === 'string' ? m.koreader_version : undefined,
-    plugin_versions: pv && typeof pv === 'object' && !Array.isArray(pv) ? pv as Record<string, string> : undefined,
-  };
-}
 
 /** One open device connection. Owns reply routing for the calls sent down it. */
 export class DeviceLink {
@@ -145,7 +111,7 @@ export class DeviceLink {
       }
       this.lastMessageAt = new Date();
       if (this.helloDone) this.armSilenceTimer(this.opts.silenceMs);
-      if (typeof msg.id === 'number' && ('result' in msg || 'error' in msg)) {
+      if (isRpcResponse(msg)) {
         const p = this.pending.get(msg.id);
         if (p) {
           this.pending.delete(msg.id);

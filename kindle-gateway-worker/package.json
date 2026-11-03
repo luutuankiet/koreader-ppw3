@@ -1,0 +1,22 @@
+{
+  "name": "kindle-gateway-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kindle gateway on Cloudflare: a Worker in front of one Durable Object holding every device's WebSocket",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "types": "wrangler types"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.5.1",
+    "@types/node": "^26.6.6",
+    "@types/ws": "^8.18.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12",
+    "wrangler": "^4.157.0",
+    "ws": "^8.22.1"
+  }
+}
