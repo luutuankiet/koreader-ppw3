@@ -233,6 +233,9 @@ end
 function KOSyncServerless:addToMainMenu(menu_items)
     menu_items.progress_sync_serverless = {
         text = _("Progress sync serverless"),
+        -- Not listed in KOReader's reader_menu_order.lua, so without a hint the
+        -- menu sorter puts it on the first tab with a "NEW: " prefix.
+        sorting_hint = "tools",
         sub_item_table = {
             {
                 text = _("Custom sync server"),
