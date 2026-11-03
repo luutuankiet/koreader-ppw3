@@ -1,0 +1,4 @@
+user: stocklist179319019820823  document: e181e77ddaa0d8e04b2ffbcc4d0b5018
+{"username":"stocklist179319019820823"}
+{"document":"e181e77ddaa0d8e04b2ffbcc4d0b5018","timestamp":1793190199}
+[{"document":"e181e77ddaa0d8e04b2ffbcc4d0b5018","percentage":0.25,"device":"Kindle","device_id":"STOCK179319019820823","timestamp":1793190199,"filename":null}]
