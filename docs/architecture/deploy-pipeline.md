@@ -1,10 +1,23 @@
 ---
 title: Plugin deploy pipeline
-covers: how a plugin directory gets onto a Kindle, where the gateway reads plugin source, shell fallbacks, plugin packages (gateway /pkg/ and GitHub Releases with registry/index.json) and the upload inbox
+covers: how a plugin directory gets onto a Kindle: the GitHub registry (registry/index.json and Releases) read by the on-device installer, deploy_plugin on the LAN fallback gateway, shell fallbacks, the gateway's /pkg/ and the upload inbox
 verified: 2026-11-03
 ---
 
 # Plugin deploy pipeline
+
+The gateway on Cloudflare (`kindle-gateway-worker/`) has no `deploy_plugin`: it has no checkout to read plugin source from. A plugin reaches a device by being published to the GitHub registry and installed with the on-device installer, "Plugin packages" (next section). `deploy_plugin` still exists on the LAN fallback gateway (`kindle-gateway/` on the home server) for a device connected to it, and is how a Kindle gets a `koreader_mcp` that can speak WebSocket before it moves.
+
+## Publish and install through the registry
+
+1. Bump `version = "..."` in the plugin's `_meta.lua`; a version already released is never replaced.
+2. `scripts/publish.sh --github <plugin>` builds the archive, creates the GitHub Release `<name>-v<version>` with it attached, and writes the plugin's entry (with `url`, `size`, `sha256`) into `registry/index.json`.
+3. Commit `registry/index.json` and merge it to `main`. Devices read the manifest from `main`, so nothing is offered until the merge.
+4. On the device: Tools, Plugin packages, tap the plugin, Install, then restart KOReader.
+
+`registry/index.json` lists `pluginpackages` and `syncedhistory` today. `koreader_mcp` and `kosyncserverless` are not in it, so on a device connected to the Cloudflare gateway they can only be updated by publishing them first, over SSH (`scripts/deploy-to-kindle.sh`), or over USB.
+
+## deploy_plugin on the LAN fallback
 
 `deploy_plugin(device, plugin)` in `kindle-gateway/src/gateway-server.ts` (around lines 460-576, a starting point not an address) takes a bare plugin name, reads `<PLUGINS_SRC>/<name>.koplugin/*.lua`, checks the device is connected, runs `mkdir -p` and a `/tmp` cleanup on it, writes each file over the device's connection, restarts KOReader and waits up to 60 s for a new connection under that name.
 
@@ -16,7 +29,7 @@ verified: 2026-11-03
 
 ## Packages for the on-device installer
 
-Kindles run no agent server, so they pull plugins instead of receiving pushes: from the gateway's `/pkg/` on the LAN, or from GitHub Releases listed in `registry/index.json`.
+Kindles run no agent server, so they pull plugins instead of receiving pushes: from GitHub Releases listed in `registry/index.json` (the installer's default), or from the LAN fallback gateway's `/pkg/`.
 
 - `scripts/publish.sh <plugin>...` (bare name, `<name>.koplugin`, or a path to a `.koplugin` folder such as the separate `rssreader.koplugin` repo) writes `<name>-<version>.tar.gz` into `PKG_DIR` (default `tmp/packages/pkg` in the repo, gitignored, created if missing), then rebuilds `index.json` from every archive there: one entry per plugin, its highest version, with `size`, `sha256`, `description`, `fullname` and `min_koreader` from `_meta.lua`.
 - An archive holds only the files git would commit, so gitignored personal config (rssreader's `rssreader_configuration.lua`, which holds credentials) never ships; dotfiles, tests, `*.patch` and `*.md` are dropped too. Its only top-level entry is `<name>.koplugin/`.
@@ -28,7 +41,9 @@ Kindles run no agent server, so they pull plugins instead of receiving pushes: f
 
 ## After a gateway code change
 
-Rebuild with `docker compose build && docker compose up -d` from `kindle-gateway/`. The registry empties on recreate and refills as devices in a live session dial back: the emulator keeps retrying every 60 s, a Kindle session gives up after 5 s, 15 s and 60 s and must be started again in its menu. The MCP proxy may quarantine changed tools until they are re-approved.
+Cloudflare: from `kindle-gateway-worker/`, `npx wrangler deploy`. The hub object restarts and every device's WebSocket closes; a device in `always` mode dials back within 60 s, a Kindle session retries after 5 s, 15 s and 60 s. Deploying needs a Cloudflare API token in `CLOUDFLARE_API_TOKEN` and the account id in `CLOUDFLARE_ACCOUNT_ID`; the OAuth token of a logged-in `cf` CLI works as the API token and was enough for everything except creating the R2 bucket (R2 must first be enabled in the dashboard). Never write either value into a file in the repo.
+
+LAN fallback: rebuild with `docker compose build && docker compose up -d` from `kindle-gateway/`. The registry empties on recreate and refills as devices in a live session dial back: the emulator keeps retrying every 60 s, a Kindle session gives up after 5 s, 15 s and 60 s and must be started again in its menu. The MCP proxy may quarantine changed tools until they are re-approved.
 
 ## Always verify by checksum
 
