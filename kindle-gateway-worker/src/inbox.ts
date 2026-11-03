@@ -6,6 +6,10 @@ import { bearerMatches } from './auth';
 // Same name rules and replies as kindle-gateway's package-host.ts, plus the device key.
 
 export const INBOX_MAX_BYTES = DEFAULT_INBOX_MAX_BYTES;
+// Bundles the whole bucket may hold. With INBOX_MAX_BYTES each that is 2 GB at most, inside
+// R2's 10 GB free storage even if the device key leaks. The bucket's lifecycle rule deletes
+// bundles 30 days old, which is what frees room again.
+export const INBOX_MAX_BUNDLES = 200;
 
 export function inboxKey(device: string, file: string): string {
   return `inbox/${device}/${file}`;
@@ -17,7 +21,12 @@ function refuse(status: number, error: string): Response {
 }
 
 /** Handles every request under /inbox/. */
-export async function inboxRoute(request: Request, env: Env, maxBytes = INBOX_MAX_BYTES): Promise<Response> {
+export async function inboxRoute(
+  request: Request,
+  env: Env,
+  maxBytes = INBOX_MAX_BYTES,
+  maxBundles = INBOX_MAX_BUNDLES,
+): Promise<Response> {
   if (!(await bearerMatches(request.headers.get('Authorization'), env.DEVICE_KEY))) {
     return new Response('unauthorized', { status: 401 });
   }
@@ -40,6 +49,13 @@ export async function inboxRoute(request: Request, env: Env, maxBytes = INBOX_MA
     if (declared > maxBytes) return refuse(413, `bundle larger than ${maxBytes} bytes`);
   }
   if (!request.body || declared === 0) return refuse(400, 'empty bundle');
+
+  // One list call (an R2 class A operation) per accepted-looking upload; cheap next to the
+  // 1M a month the free plan includes.
+  const listed = await env.INBOX.list({ prefix: 'inbox/', limit: maxBundles });
+  if (listed.truncated || listed.objects.length >= maxBundles) {
+    return refuse(507, `inbox full (${maxBundles} bundles); bundles are deleted 30 days after upload`);
+  }
 
   // Counts the bytes as they stream past and refuses gzip-less or oversized bodies, so a
   // missing or false Content-Length cannot get more than maxBytes into the bucket. Nothing
