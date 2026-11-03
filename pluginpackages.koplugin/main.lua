@@ -158,6 +158,7 @@ function PluginPackages:editHost()
     local dialog
     dialog = InputDialog:new{
         title = _("Package host"),
+        description = _("Leave empty to use the GitHub registry."),
         input = self:host(),
         buttons = {{
             {
@@ -171,11 +172,14 @@ function PluginPackages:editHost()
                 callback = function()
                     local value = util.trim(dialog:getInputText())
                     UIManager:close(dialog)
-                    if value ~= "" then
+                    -- An empty host goes back to the GitHub registry (Core.DEFAULT_INDEX).
+                    if value == "" or value == Core.DEFAULT_INDEX then
+                        G_reader_settings:delSetting(SETTING_HOST)
+                    else
                         G_reader_settings:saveSetting(SETTING_HOST, value)
-                        -- Otherwise on disk only at a clean exit: a crash forgets the host.
-                        G_reader_settings:flush()
                     end
+                    -- Otherwise on disk only at a clean exit: a crash forgets the host.
+                    G_reader_settings:flush()
                     self:open()
                 end,
             },
