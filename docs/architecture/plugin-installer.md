@@ -20,6 +20,10 @@ apart by `Core.indexLocation`:
 | ends in `.json` | that URL | the folder of that URL |
 | anything else, such as the gateway's `http://<host>:9999/pkg/` (what earlier versions saved) | `<setting>/index.json` | the setting |
 
+The GitHub manifest is the normal source: the gateway on Cloudflare serves no
+`/pkg/`, so a Kindle that has moved to it keeps the default (an empty Package
+host). A `/pkg/` address only works while the home server's LAN gateway runs.
+
 Both lists are format 1 (`scripts/publish.sh` writes both, see the deploy
 pipeline page). `Core.parseIndex` keeps an entry only if it has a safe `name`, a
 string `version`, a numeric `size`, a 64-hex `sha256`, and either:

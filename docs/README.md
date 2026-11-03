@@ -15,8 +15,8 @@ something is implemented.
 
 | page | covers | verified |
 |---|---|---|
-| [Plugin deploy pipeline](architecture/deploy-pipeline.md) | how a plugin directory gets onto a Kindle, where the gateway reads plugin source, shell fallbacks, plugin packages (gateway /pkg/ and GitHub Releases with registry/index.json) and the upload inbox | 2026-11-03 |
-| [Device bridge (agent to Kindle)](architecture/device-bridge.md) | how an agent call reaches a Kindle, which file owns the gateway tools, the stateless MCP transport, the dial-out connection (raw TCP or WebSocket with a device key) and live sessions, screenshots and running on Android | 2026-11-03 |
+| [Plugin deploy pipeline](architecture/deploy-pipeline.md) | how a plugin directory gets onto a Kindle: the GitHub registry (registry/index.json and Releases) read by the on-device installer, deploy_plugin on the LAN fallback gateway, shell fallbacks, the gateway's /pkg/ and the upload inbox | 2026-11-03 |
+| [Device bridge (agent to Kindle)](architecture/device-bridge.md) | how an agent call reaches a Kindle, which files own the gateway tools on Cloudflare and on the LAN fallback, the stateless MCP transport, the dial-out connection (WebSocket with a device key, or raw TCP) and live sessions, screenshots, diagnostics and running on Android | 2026-11-03 |
 | [Plugin installer](architecture/plugin-installer.md) | where the on-device plugin installer reads the package list, downloads and checks an archive, swaps the plugin folder, keeps the backup and rolls back | 2026-11-03 |
 | [Synced reading list plugin](architecture/synced-reading-list.md) | where the synced reading list sets the progress sync device id from the Kindle serial, fetches the server list, maps books to local files under any of their merged file names, builds rows, filters and searches, refreshes, shows the long-press pop-up, removes a book from the list, chooses which progress sync plugin it works with, and opens a book at its synced position | 2026-11-03 |
 
@@ -40,6 +40,7 @@ crashing.
 | get_menu_items says no menu is visible while KOReader's main menu is open on screen | [MAIN_MENU_INVISIBLE_TO_GATEWAY_MENU_TOOLS](traps/MAIN_MENU_INVISIBLE_TO_GATEWAY_MENU_TOOLS.md) | koreader_mcp | 2026-10-28 |
 | newline in a KOReader menu item text shows as a space, no paragraph break | [MENU_ITEM_NEWLINES_BECOME_SPACES](traps/MENU_ITEM_NEWLINES_BECOME_SPACES.md) | rssreader | 2026-10-28 |
 | address already in use on port 8888 after restarting KOReader | [PORT_8888_STAYS_BUSY_AFTER_RESTART](traps/PORT_8888_STAYS_BUSY_AFTER_RESTART.md) | koreader_mcp | 2026-10-28 |
+| restart_koreader returns restart_timeout on emu, killall luajit does nothing, and the emulator log ends with Inhibiting user input | [RESTART_TIMEOUT_WHILE_EMULATOR_ASLEEP](traps/RESTART_TIMEOUT_WHILE_EMULATOR_ASLEEP.md) | emulator | 2026-11-03 |
 | a second device says 'Latest progress is coming from this device' and will not pull the position another device pushed | [RESTORED_SETTINGS_CLONE_PROGRESS_SYNC_DEVICE_ID](traps/RESTORED_SETTINGS_CLONE_PROGRESS_SYNC_DEVICE_ID.md) | kosync | 2026-10-30 |
 | a screenshot shows the Kindle clock, battery or WiFi icon in the top corners of KOReader, but the physical screen is clean | [SCREENSHOT_SHOWS_KINDLE_CLOCK_SCREEN_DOES_NOT](traps/SCREENSHOT_SHOWS_KINDLE_CLOCK_SCREEN_DOES_NOT.md) | kindle-gateway | 2026-10-29 |
 | list_devices returns an empty list or new tools are not callable after rebuilding the gateway | [TOOLS_MISSING_AFTER_GATEWAY_REBUILD](traps/TOOLS_MISSING_AFTER_GATEWAY_REBUILD.md) | kindle-gateway | 2026-10-30 |
@@ -53,6 +54,7 @@ Simply true, and expensive to re-derive.
 | [Gateway configuration](reference/configuration.md) | environment variables read by the gateway container and where they are set | 2026-10-31 |
 | [Kindle power daemon (powerd) properties and sleep timers](reference/kindle-powerd.md) | what com.lab126.powerd exposes on a Paperwhite 3 for delaying suspend, and the timers between the power button and sleep | 2026-11-03 |
 | [Kindle SSH access and ports](reference/kindle-ssh-access.md) | the two SSH servers on a jailbroken Paperwhite 3, which survives a KOReader restart, and which ports matter | 2026-10-28 |
+| [Moving a Kindle to the Cloudflare gateway](reference/move-kindle-to-cloudflare-gateway.md) | give a Kindle a koreader_mcp that speaks WebSocket, point it at wss://kindle.kenluu.org/device with the device key, install plugins from the GitHub registry, connect an agent, and when the home server's LAN gateway can be retired | 2026-11-03 |
 | [Installing progress sync serverless on a Kindle](reference/progress-sync-serverless-install.md) | install the serverless progress sync and synced reading list packages through Plugin packages, turn off the built-in Progress sync, log in, and where each setting is stored | 2026-11-03 |
 
 ## Decisions
@@ -65,5 +67,6 @@ it with a new one rather than editing it.
 - [Working notes were promoted to docs/ and the private journal retired](adr/0003-promote-working-notes-into-docs.md)
 - [The gateway serves MCP statelessly, with no session IDs](adr/0004-stateless-gateway-mcp-transport.md)
 - [Devices dial out to the gateway, and only during a live session](adr/0005-devices-dial-out-live-mode.md)
+- [The gateway runs on a Cloudflare Worker, devices hold a hibernating WebSocket, and plugins ship from a GitHub registry](adr/0006-cloudflare-worker-hibernating-websocket.md)
 
 <!-- END GENERATED INDEX -->

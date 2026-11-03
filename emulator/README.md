@@ -50,6 +50,23 @@ docker exec koreader-emu sh -c 'xwd -root -silent -display "$DISPLAY" | convert 
   | `MCP_GATEWAY_URL` | unset | a `ws://` or `wss://` gateway URL; when set the bridge speaks WebSocket to it and ignores host and port |
   | `MCP_GATEWAY_KEY` | unset | device key sent as `Authorization: Bearer` on the WebSocket handshake and the diagnostics upload |
 
+  Two ways to reach a gateway, chosen by whether `MCP_GATEWAY_URL` is set:
+
+  | to reach | set | transport |
+  |---|---|---|
+  | the Cloudflare gateway | `MCP_GATEWAY_URL: "wss://kindle.kenluu.org/device"`, `MCP_GATEWAY_KEY: "<device key>"` | WebSocket over TLS, certificate checked |
+  | a local `npx wrangler dev` | `MCP_GATEWAY_URL: "ws://127.0.0.1:8787/device"`, `MCP_GATEWAY_KEY` matching `DEVICE_KEY` in `.dev.vars` | WebSocket, no TLS |
+  | the LAN gateway on the home server | `MCP_GATEWAY_URL` unset or empty, `MCP_GATEWAY_HOST` and `MCP_GATEWAY_DEVICE_PORT` | raw TCP, newline-delimited JSON, no key |
+
+  `docker-compose.yml` is committed, so a key set there must never be committed with it;
+  the settings file below lives under the gitignored `state/` and is the safer place. The variables
+  are read by `supervisor.sh`, which is baked into the image: a container built before
+  `MCP_GATEWAY_URL` existed ignores it, so rebuild (`docker compose up -d --build`) after
+  pulling. To switch without a rebuild, write `gateway_url` and `gateway_key` into
+  `state/koreader-home/settings/koreader_mcp.lua`, which beats `config.lua`; delete the
+  file and restart KOReader to go back. A host and port saved from the Agent bridge menu
+  also beat a URL from `config.lua`.
+
 - No `fbgrab` here: `capture_screenshot` falls back to KOReader's own `Screen:shot`.
 - `/mnt/us/koreader/koreader.sh` is a no-op shim: the gateway restart runs
   `killall luajit; ./koreader.sh`, and the supervisor already relaunches.
