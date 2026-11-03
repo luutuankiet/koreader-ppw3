@@ -18,7 +18,7 @@ something is implemented.
 | [Plugin deploy pipeline](architecture/deploy-pipeline.md) | how a plugin directory gets onto a Kindle, where the gateway reads plugin source, shell fallbacks, plugin packages and the upload inbox | 2026-10-31 |
 | [Device bridge (agent to Kindle)](architecture/device-bridge.md) | how an agent call reaches a Kindle, which file owns the gateway tools, the stateless MCP transport, the dial-out connection and live sessions, screenshots and running on Android | 2026-10-31 |
 | [Plugin installer](architecture/plugin-installer.md) | where the on-device plugin installer reads the package list, downloads and checks an archive, swaps the plugin folder, keeps the backup and rolls back | 2026-10-31 |
-| [Synced reading list plugin](architecture/synced-reading-list.md) | where the synced reading list sets the progress sync device id from the Kindle serial, fetches the server list, maps books to local files under any of their merged file names, builds rows, filters and searches, refreshes, shows the long-press pop-up, removes a book from the list, and opens a book at its synced position | 2026-10-31 |
+| [Synced reading list plugin](architecture/synced-reading-list.md) | where the synced reading list sets the progress sync device id from the Kindle serial, fetches the server list, maps books to local files under any of their merged file names, builds rows, filters and searches, refreshes, shows the long-press pop-up, removes a book from the list, chooses which progress sync plugin it works with, and opens a book at its synced position | 2026-11-03 |
 
 ## Traps
 
@@ -30,6 +30,7 @@ crashing.
 |---|---|---|---|
 | deploy_plugin says deployed but the device still runs the old code | [DEPLOY_REPORTS_OK_BUT_FILE_UNCHANGED](traps/DEPLOY_REPORTS_OK_BUT_FILE_UNCHANGED.md) | kindle-gateway | 2026-10-28 |
 | koreader_mcp stops responding after run_command that calls curl on the same device | [DEVICE_SERVER_HANGS_ON_SELF_CALL](traps/DEVICE_SERVER_HANGS_ON_SELF_CALL.md) | koreader_mcp | 2026-10-28 |
+| emulator stays on the sleep screen after sending Resume, and the next Power press puts it back to sleep | [EMULATOR_STAYS_ASLEEP_AFTER_RESUME_EVENT](traps/EMULATOR_STAYS_ASLEEP_AFTER_RESUME_EVENT.md) | emulator | 2026-11-03 |
 | Kindle froze after I sent touch events with evemu-event | [FREEZES_AFTER_RAW_TOUCH_INJECTION](traps/FREEZES_AFTER_RAW_TOUCH_INJECTION.md) | device-control | 2026-10-28 |
 | git status shows a symlinked plugin directory as untracked although it is in .gitignore | [GITIGNORE_ENTRY_NOT_MATCHING_SYMLINK](traps/GITIGNORE_ENTRY_NOT_MATCHING_SYMLINK.md) | repo-layout | 2026-10-28 |
 | every gateway tool says \"Device 'kindle-N' is not connected\", or the device is missing from list_devices, while the Kindle is awake and on WiFi | [KINDLE_AWAKE_BUT_GATEWAY_SAYS_OFFLINE](traps/KINDLE_AWAKE_BUT_GATEWAY_SAYS_OFFLINE.md) | kindle-gateway | 2026-10-31 |
@@ -50,6 +51,7 @@ Simply true, and expensive to re-derive.
 |---|---|---|
 | [Gateway configuration](reference/configuration.md) | environment variables read by the gateway container and where they are set | 2026-10-31 |
 | [Kindle SSH access and ports](reference/kindle-ssh-access.md) | the two SSH servers on a jailbroken Paperwhite 3, which survives a KOReader restart, and which ports matter | 2026-10-28 |
+| [Installing progress sync serverless on a Kindle](reference/progress-sync-serverless-install.md) | install the serverless progress sync and synced reading list packages through Plugin packages, turn off the built-in Progress sync, log in, and where each setting is stored | 2026-11-03 |
 
 ## Decisions
 

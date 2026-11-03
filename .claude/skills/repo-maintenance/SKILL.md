@@ -25,6 +25,7 @@ crashing.
 |---|---|---|---|
 | deploy_plugin says deployed but the device still runs the old code | [DEPLOY_REPORTS_OK_BUT_FILE_UNCHANGED](../../../docs/traps/DEPLOY_REPORTS_OK_BUT_FILE_UNCHANGED.md) | kindle-gateway | 2026-10-28 |
 | koreader_mcp stops responding after run_command that calls curl on the same device | [DEVICE_SERVER_HANGS_ON_SELF_CALL](../../../docs/traps/DEVICE_SERVER_HANGS_ON_SELF_CALL.md) | koreader_mcp | 2026-10-28 |
+| emulator stays on the sleep screen after sending Resume, and the next Power press puts it back to sleep | [EMULATOR_STAYS_ASLEEP_AFTER_RESUME_EVENT](../../../docs/traps/EMULATOR_STAYS_ASLEEP_AFTER_RESUME_EVENT.md) | emulator | 2026-11-03 |
 | Kindle froze after I sent touch events with evemu-event | [FREEZES_AFTER_RAW_TOUCH_INJECTION](../../../docs/traps/FREEZES_AFTER_RAW_TOUCH_INJECTION.md) | device-control | 2026-10-28 |
 | git status shows a symlinked plugin directory as untracked although it is in .gitignore | [GITIGNORE_ENTRY_NOT_MATCHING_SYMLINK](../../../docs/traps/GITIGNORE_ENTRY_NOT_MATCHING_SYMLINK.md) | repo-layout | 2026-10-28 |
 | every gateway tool says \"Device 'kindle-N' is not connected\", or the device is missing from list_devices, while the Kindle is awake and on WiFi | [KINDLE_AWAKE_BUT_GATEWAY_SAYS_OFFLINE](../../../docs/traps/KINDLE_AWAKE_BUT_GATEWAY_SAYS_OFFLINE.md) | kindle-gateway | 2026-10-31 |
@@ -45,6 +46,7 @@ Simply true, and expensive to re-derive.
 |---|---|---|
 | [Gateway configuration](../../../docs/reference/configuration.md) | environment variables read by the gateway container and where they are set | 2026-10-31 |
 | [Kindle SSH access and ports](../../../docs/reference/kindle-ssh-access.md) | the two SSH servers on a jailbroken Paperwhite 3, which survives a KOReader restart, and which ports matter | 2026-10-28 |
+| [Installing progress sync serverless on a Kindle](../../../docs/reference/progress-sync-serverless-install.md) | install the serverless progress sync and synced reading list packages through Plugin packages, turn off the built-in Progress sync, log in, and where each setting is stored | 2026-11-03 |
 
 ## Decisions
 
