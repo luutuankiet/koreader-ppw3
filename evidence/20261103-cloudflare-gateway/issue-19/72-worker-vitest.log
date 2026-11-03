@@ -1,0 +1,322 @@
+# HEAD 2c2ef19
+$ npx vitest run
+
+ RUN  v4.1.12 $HOME/dev/koreader-ppw3/.claude/worktrees/agent-a1cacf61ce6560f0c/kindle-gateway-worker
+
+Using secrets defined in .dev.vars
+Using secrets defined in .dev.vars
+Using secrets defined in .dev.vars
+stderr | test/mcp.test.ts > stateless MCP, both protocol versions > answers a 2025-11-25 initialize and never issues a session id
+responseMode: 'json' drops mid-call notifications. subscriptions/listen streams are always served over SSE regardless; other notifications emitted before a result are dropped.
+
+ ✓ test/mcp.test.ts > agent auth on /mcp > refuses a request with no key, before any MCP work 6ms
+ ✓ test/mcp.test.ts > agent auth on /mcp > refuses a wrong key 3ms
+ ✓ test/mcp.test.ts > agent auth on /mcp > refuses the device key 3ms
+ ✓ test/mcp.test.ts > agent auth on /mcp > refuses GET and DELETE without a key too 5ms
+ ✓ test/mcp.test.ts > stateless MCP, both protocol versions > answers a 2025-11-25 initialize and never issues a session id 20ms
+ ✓ test/mcp.test.ts > stateless MCP, both protocol versions > answers GET with 405 (no server-to-client stream) 7ms
+ ✓ test/mcp.test.ts > stateless MCP, both protocol versions > lists the tools to a 2025 client 39ms
+stdout | test/hub.test.ts > hello > welcomes a valid hello and lists the device
+[hub] 'kindle-a' online from unknown (KOReader v2026.07.1)
+
+stdout | test/hub.test.ts > hello > refuses a name held by another device and closes the socket
+[hub] 'kindle-a' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > hello > refuses a name held by another device and closes the socket
+[hub] 'kindle-b' online from unknown (KOReader v2026.07.1)
+
+stderr | test/hub.test.ts > hello > refuses a name held by another device and closes the socket
+[hub] refused 'kindle-b' from unknown: name 'kindle-b' is held by another device
+
+stdout | test/hub.test.ts > hello > lets the same device replace its old connection
+[hub] 'kindle-b' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > hello > lets the same device replace its old connection
+[hub] 'kindle-c' online from unknown (KOReader v2026.07.1)
+
+stdout | test/hub.test.ts > hello > lets the same device replace its old connection
+[hub] 'kindle-c' offline: replaced by a new connection
+[hub] 'kindle-c' online from unknown (KOReader v2026.07.1)
+
+stdout | test/hub.test.ts > hello > lets the same device replace its old connection
+[hub] 'kindle-c' offline: connection closed (1000 replaced by a new connection)
+
+stdout | test/hub.test.ts > hello > refuses a malformed hello
+[hub] 'kindle-c' offline: connection closed (1000 test done)
+
+ ✓ test/hub.test.ts > Worker routing and auth > serves /health without a key 8ms
+ ✓ test/hub.test.ts > Worker routing and auth > answers 404 for anything else 5ms
+ ✓ test/hub.test.ts > Worker routing and auth > rejects /device without a key 4ms
+ ✓ test/hub.test.ts > Worker routing and auth > rejects /device with a wrong key 2ms
+ ✓ test/hub.test.ts > Worker routing and auth > rejects the agent key on /device 3ms
+ ✓ test/hub.test.ts > Worker routing and auth > wants a WebSocket upgrade on /device 3ms
+ ✓ test/hub.test.ts > hello > welcomes a valid hello and lists the device 22ms
+ ✓ test/hub.test.ts > hello > refuses a name held by another device and closes the socket 24ms
+ ✓ test/hub.test.ts > hello > lets the same device replace its old connection 21ms
+stdout | test/hub.test.ts > calls > round-trips a call and its result
+[hub] 'kindle-rt' online from unknown (KOReader v2026.07.1)
+
+stdout | test/hub.test.ts > calls > passes a device-side error back as a reply
+[hub] 'kindle-rt' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > calls > passes a device-side error back as a reply
+[hub] 'kindle-err' online from unknown (KOReader v2026.07.1)
+
+stdout | test/hub.test.ts > calls > times out when the device says nothing
+[hub] 'kindle-err' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > calls > times out when the device says nothing
+[hub] 'kindle-slow' online from unknown (KOReader v2026.07.1)
+
+ ✓ test/mcp.test.ts > stateless MCP, both protocol versions > lists the tools to a 2026-07-28 client (server/discover, no initialize) 67ms
+ ✓ test/mcp.test.ts > stateless MCP, both protocol versions > answers server/discover directly 7ms
+ ✓ test/mcp.test.ts > stateless MCP, both protocol versions > keeps the schemas: tap needs device and ref 27ms
+ ✓ test/mcp.test.ts > stateless MCP, both protocol versions > serves the diagnostics tools from the R2 inbox 43ms
+stdout | test/mcp.test.ts > device tools over protocol 2025-11-25 > lists a connected device
+[hub] 'k-list-false' online from unknown (KOReader fake)
+
+stdout | test/mcp.test.ts > device tools over protocol 2025-11-25 > snapshots, taps, and refuses a stale reference without asking the device
+[hub] 'k-list-false' offline: connection closed (1000 test done)
+
+stdout | test/mcp.test.ts > device tools over protocol 2025-11-25 > snapshots, taps, and refuses a stale reference without asking the device
+[hub] 'k-ui-false' online from unknown (KOReader fake)
+
+ ✓ test/hub.test.ts > hello > refuses a malformed hello 10ms
+ ✓ test/hub.test.ts > calls > round-trips a call and its result 16ms
+ ✓ test/hub.test.ts > calls > passes a device-side error back as a reply 14ms
+stdout | test/mcp.test.ts > device tools over protocol 2025-11-25 > returns a screenshot as a 536x724 grayscale JPEG
+[hub] 'k-ui-false' offline: connection closed (1000 test done)
+
+stdout | test/mcp.test.ts > device tools over protocol 2025-11-25 > returns a screenshot as a 536x724 grayscale JPEG
+[hub] 'k-ss-false' online from unknown (KOReader fake)
+
+ ✓ test/mcp.test.ts > stateless MCP, both protocol versions > keeps the diagnostics schemas: read needs device, list needs nothing 27ms
+ ✓ test/mcp.test.ts > device tools over protocol 2025-11-25 > lists a connected device 32ms
+ ✓ test/mcp.test.ts > device tools over protocol 2025-11-25 > snapshots, taps, and refuses a stale reference without asking the device 53ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > stores a bundle at inbox/<device>/<file> and answers like kindle-gateway 25ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > accepts a streamed body without Content-Length 15ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > never overwrites a bundle 11ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > device key > refuses no Authorization with 401 and stores nothing 3ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > device key > refuses a wrong key with 401 and stores nothing 3ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > device key > refuses the agent key with 401 and stores nothing 3ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > device key > refuses the device key as Basic with 401 and stores nothing 3ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > device key > checks the key before anything else 5ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > size cap > refuses a Content-Length over the cap with 413 before reading 7ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > size cap > takes a body of exactly the cap 507ms
+uncaught exception; source = Uncaught (in promise); stack = Error: no reply to echo within 0.3s
+    at $HOME/dev/koreader-ppw3/.claude/worktrees/agent-a1cacf61ce6560f0c/kindle-gateway-worker/src/hub.ts:166:16
+uncaught exception; source = Uncaught (in promise); stack = Error: device 'nobody' is not connected
+    at Hub.call ($HOME/dev/koreader-ppw3/.claude/worktrees/agent-a1cacf61ce6560f0c/kindle-gateway-worker/src/hub.ts:161:24)
+    at $HOME/dev/koreader-ppw3/.claude/worktrees/agent-a1cacf61ce6560f0c/kindle-gateway-worker/node_modules/@cloudflare/vitest-plugin/dist/worker/lib/cloudflare/test-internal.mjs:369:47
+stdout | test/hub.test.ts > calls > rejects a call to a device that is not connected
+[hub] 'kindle-slow' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > calls > rejects a pending call when the device disconnects
+[hub] 'kindle-drop' online from unknown (KOReader v2026.07.1)
+
+uncaught exception; source = Uncaught (in promise); stack = Error: device disconnected (connection closed (1000 test done))
+    at Hub.dropSocket ($HOME/dev/koreader-ppw3/.claude/worktrees/agent-a1cacf61ce6560f0c/kindle-gateway-worker/src/hub.ts:356:16)
+    at Hub.webSocketClose ($HOME/dev/koreader-ppw3/.claude/worktrees/agent-a1cacf61ce6560f0c/kindle-gateway-worker/src/hub.ts:235:10)
+    at $HOME/dev/koreader-ppw3/.claude/worktrees/agent-a1cacf61ce6560f0c/kindle-gateway-worker/node_modules/@cloudflare/vitest-plugin/dist/worker/lib/cloudflare/test-internal.mjs:567:56
+stdout | test/hub.test.ts > calls > rejects a pending call when the device disconnects
+[hub] 'kindle-drop' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > hibernation > answers the ping without waking the object
+[hub] 'kindle-ping' online from unknown (KOReader v2026.07.1)
+
+stdout | test/hub.test.ts > hibernation > still answers a ping that is not byte-identical, by waking
+[hub] 'kindle-ping' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > hibernation > still answers a ping that is not byte-identical, by waking
+[hub] 'kindle-ping2' online from unknown (KOReader v2026.07.1)
+
+stdout | test/hub.test.ts > hibernation > rebuilds the registry and completes a call after the object hibernated and woke
+[hub] 'kindle-ping2' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > hibernation > rebuilds the registry and completes a call after the object hibernated and woke
+[hub] 'kindle-wake' online from unknown (KOReader v2026.07.1)
+
+stdout | test/hub.test.ts > hibernation > keeps refusing a duplicate name after waking
+[hub] 'kindle-wake' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > hibernation > keeps refusing a duplicate name after waking
+[hub] 'kindle-dup' online from unknown (KOReader v2026.07.1)
+
+stdout | test/mcp.test.ts > device tools over protocol 2025-11-25 > falls back to the original PNG when encoding fails
+[hub] 'k-ss-false' offline: connection closed (1000 test done)
+
+stderr | test/hub.test.ts > hibernation > keeps refusing a duplicate name after waking
+[hub] refused 'kindle-dup' from unknown: name 'kindle-dup' is held by another device
+
+stdout | test/mcp.test.ts > device tools over protocol 2025-11-25 > falls back to the original PNG when encoding fails
+[hub] 'k-ssbad-false' online from unknown (KOReader fake)
+
+stdout | test/hub.test.ts > waitForReconnect > resolves when the device comes back
+[hub] 'kindle-dup' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > waitForReconnect > resolves when the device comes back
+[hub] 'kindle-re' online from unknown (KOReader v2026.07.1)
+
+stdout | test/hub.test.ts > waitForReconnect > resolves when the device comes back
+[hub] 'kindle-re' offline: connection closed (1000 test done)
+
+ ✓ test/hub.test.ts > calls > times out when the device says nothing 320ms
+ ✓ test/hub.test.ts > calls > rejects a call to a device that is not connected 5ms
+ ✓ test/hub.test.ts > calls > rejects a pending call when the device disconnects 15ms
+ ✓ test/hub.test.ts > hibernation > pins the heartbeat frames the Lua client sends and expects 0ms
+ ✓ test/hub.test.ts > hibernation > answers the ping without waking the object 14ms
+ ✓ test/hub.test.ts > hibernation > still answers a ping that is not byte-identical, by waking 11ms
+ ✓ test/hub.test.ts > hibernation > rebuilds the registry and completes a call after the object hibernated and woke 18ms
+ ✓ test/hub.test.ts > hibernation > keeps refusing a duplicate name after waking 20ms
+stderr | test/mcp.test.ts > device tools over protocol 2025-11-25 > falls back to the original PNG when encoding fails
+[resize] failed, returning the original PNG: RuntimeError: unreachable
+
+stdout | test/hub.test.ts > waitForReconnect > resolves when the device comes back
+[hub] 'kindle-re' online from unknown (KOReader v2026.07.1)
+
+stdout | test/mcp.test.ts > device tools over protocol 2025-11-25 > adds a screenshot after a menu tool
+[hub] 'k-ssbad-false' offline: connection closed (1000 test done)
+
+stdout | test/mcp.test.ts > device tools over protocol 2025-11-25 > adds a screenshot after a menu tool
+[hub] 'k-menu-false' online from unknown (KOReader fake)
+
+stdout | test/hub.test.ts > waitForReconnect > resolves null when the device stays away
+[hub] 'kindle-re' offline: connection closed (1000 test done)
+
+ ✓ test/hub.test.ts > waitForReconnect > resolves when the device comes back 41ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > size cap > refuses a streamed body that grows past the cap, storing nothing 235ms
+uncaught exception; source = Uncaught (in promise); stack = TypeError: Can't read from request stream because client disconnected.
+uncaught exception; source = Uncaught (in promise); stack = TypeError: Can't read from request stream because client disconnected.
+uncaught exception; source = Uncaught (in promise); stack = TypeError: Can't read from request stream because client disconnected.
+uncaught exception; source = Uncaught (in promise); stack = TypeError: Can't read from request stream because client disconnected.
+ ✓ test/mcp.test.ts > device tools over protocol 2025-11-25 > returns a screenshot as a 536x724 grayscale JPEG 297ms
+ ✓ test/mcp.test.ts > device tools over protocol 2025-11-25 > falls back to the original PNG when encoding fails 42ms
+stdout | test/mcp.test.ts > device tools over protocol 2025-11-25 > forwards JSON params and passes a device error back
+[hub] 'k-menu-false' offline: connection closed (1000 test done)
+
+stdout | test/mcp.test.ts > device tools over protocol 2025-11-25 > forwards JSON params and passes a device error back
+[hub] 'k-fwd-false' online from unknown (KOReader fake)
+
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > bad bodies > refuses an empty bundle 5ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > bad bodies > refuses a body that is not gzip, streamed or not 17ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > bad bodies > answers 405 to anything but PUT 3ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > names (same rules as kindle-gateway/src/package-host.ts) > refuses /inbox/up-names/..%2F..%2Fx.tar.gz 3ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > names (same rules as kindle-gateway/src/package-host.ts) > refuses /inbox/up-names/sub/x.tar.gz 3ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > names (same rules as kindle-gateway/src/package-host.ts) > refuses /inbox/up-names/ 3ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > names (same rules as kindle-gateway/src/package-host.ts) > refuses /inbox//x.tar.gz 3ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > names (same rules as kindle-gateway/src/package-host.ts) > refuses /inbox/up-names 2ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > names (same rules as kindle-gateway/src/package-host.ts) > refuses /inbox/up-names/x.zip 3ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > names (same rules as kindle-gateway/src/package-host.ts) > refuses /inbox/up-names/.x.tar.gz 3ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > names (same rules as kindle-gateway/src/package-host.ts) > refuses /inbox/.hidden/x.tar.gz 2ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > names (same rules as kindle-gateway/src/package-host.ts) > refuses /inbox/up%20names/x.tar.gz 3ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > names (same rules as kindle-gateway/src/package-host.ts) > refuses /inbox/up-names/x%00.tar.gz 3ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > names (same rules as kindle-gateway/src/package-host.ts) > refuses /inbox/up-names/x;y.tar.gz 3ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > names (same rules as kindle-gateway/src/package-host.ts) > refuses /inbox/ddddddddddddddddddddddddddddddddddddddddddddddddddddd 3ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > names (same rules as kindle-gateway/src/package-host.ts) > refuses /inbox/up-names/ffffffffffffffffffffffffffffffffffffffffffff 2ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > names (same rules as kindle-gateway/src/package-host.ts) > dot segments resolve before routing, so they never reach the inbox 8ms
+ ✓ test/inbox.test.ts > PUT /inbox/<device>/<file> > names (same rules as kindle-gateway/src/package-host.ts) > takes the longest names the rules allow 5ms
+ ✓ test/hub.test.ts > waitForReconnect > resolves null when the device stays away 206ms
+stdout | test/mcp.test.ts > device tools over protocol 2025-11-25 > says so when the device is not connected
+[hub] 'k-fwd-false' offline: connection closed (1000 test done)
+
+stdout | test/mcp.test.ts > device tools over protocol 2025-11-25 > restarts KOReader and waits for the device to come back
+[hub] 'k-restart-false' online from unknown (KOReader fake)
+
+ ✓ test/inbox.test.ts > list_diagnostics and read_diagnostics on R2 > list_diagnostics {} answers what kindle-gateway answers 2ms
+ ✓ test/inbox.test.ts > list_diagnostics and read_diagnostics on R2 > list_diagnostics {"device":"emu"} answers what kindle-gateway answers 1ms
+ ✓ test/inbox.test.ts > list_diagnostics and read_diagnostics on R2 > list_diagnostics {"device":"nobody"} answers what kindle-gateway answers 1ms
+ ✓ test/inbox.test.ts > list_diagnostics and read_diagnostics on R2 > list_diagnostics {"device":"../.."} answers what kindle-gateway answers 1ms
+ ✓ test/inbox.test.ts > list_diagnostics and read_diagnostics on R2 > read_diagnostics {"device":"emu"} answers what kindle-gateway answers 3ms
+ ✓ test/inbox.test.ts > list_diagnostics and read_diagnostics on R2 > read_diagnostics {"device":"emu","file":"20261031-100000.tar.gz"} answers what kindle-gateway answers 3ms
+ ✓ test/inbox.test.ts > list_diagnostics and read_diagnostics on R2 > read_diagnostics {"device":"kindle-1"} answers what kindle-gateway answers 3ms
+ ✓ test/inbox.test.ts > list_diagnostics and read_diagnostics on R2 > read_diagnostics {"device":".."} answers what kindle-gateway answers 0ms
+ ✓ test/inbox.test.ts > list_diagnostics and read_diagnostics on R2 > read_diagnostics {"device":"emu","file":"../../x.tar.gz"} answers what kindle-gateway answers 0ms
+ ✓ test/inbox.test.ts > list_diagnostics and read_diagnostics on R2 > read_diagnostics {"device":"emu","file":"none.tar.gz"} answers what kindle-gateway answers 1ms
+ ✓ test/inbox.test.ts > list_diagnostics and read_diagnostics on R2 > read_diagnostics {"device":"nobody"} answers what kindle-gateway answers 2ms
+ ✓ test/inbox.test.ts > list_diagnostics and read_diagnostics on R2 > sends the screenshot as the PNG from the bundle 3ms
+ ✓ test/inbox.test.ts > list_diagnostics and read_diagnostics on R2 > reports a damaged bundle as a tool error 4ms
+ ✓ test/mcp.test.ts > device tools over protocol 2025-11-25 > adds a screenshot after a menu tool 189ms
+ ✓ test/mcp.test.ts > device tools over protocol 2025-11-25 > forwards JSON params and passes a device error back 45ms
+ ✓ test/mcp.test.ts > device tools over protocol 2025-11-25 > says so when the device is not connected 24ms
+stdout | test/mcp.test.ts > device tools over protocol 2025-11-25 > restarts KOReader and waits for the device to come back
+[restart] scheduling a KOReader restart on k-restart-false
+
+stdout | test/mcp.test.ts > device tools over protocol 2025-11-25 > restarts KOReader and waits for the device to come back
+[hub] 'k-restart-false' offline: connection closed (1001 restarting)
+
+stdout | test/mcp.test.ts > device tools over protocol 2025-11-25 > restarts KOReader and waits for the device to come back
+[hub] 'k-restart-false' online from unknown (KOReader fake)
+
+stdout | test/mcp.test.ts > device tools over protocol 2026-07-28 > lists a connected device
+[hub] 'k-restart-false' offline: connection closed (1000 test done)
+
+stdout | test/mcp.test.ts > device tools over protocol 2026-07-28 > lists a connected device
+[hub] 'k-list-true' online from unknown (KOReader fake)
+
+stdout | test/mcp.test.ts > device tools over protocol 2026-07-28 > snapshots, taps, and refuses a stale reference without asking the device
+[hub] 'k-list-true' offline: connection closed (1000 test done)
+
+stdout | test/mcp.test.ts > device tools over protocol 2026-07-28 > snapshots, taps, and refuses a stale reference without asking the device
+[hub] 'k-ui-true' online from unknown (KOReader fake)
+
+stdout | test/mcp.test.ts > device tools over protocol 2026-07-28 > returns a screenshot as a 536x724 grayscale JPEG
+[hub] 'k-ui-true' offline: connection closed (1000 test done)
+
+stdout | test/mcp.test.ts > device tools over protocol 2026-07-28 > returns a screenshot as a 536x724 grayscale JPEG
+[hub] 'k-ss-true' online from unknown (KOReader fake)
+
+ ✓ test/mcp.test.ts > device tools over protocol 2025-11-25 > restarts KOReader and waits for the device to come back 264ms
+ ✓ test/mcp.test.ts > device tools over protocol 2026-07-28 > lists a connected device 25ms
+ ✓ test/mcp.test.ts > device tools over protocol 2026-07-28 > snapshots, taps, and refuses a stale reference without asking the device 53ms
+stdout | test/mcp.test.ts > device tools over protocol 2026-07-28 > falls back to the original PNG when encoding fails
+[hub] 'k-ss-true' offline: connection closed (1000 test done)
+
+stdout | test/mcp.test.ts > device tools over protocol 2026-07-28 > falls back to the original PNG when encoding fails
+[hub] 'k-ssbad-true' online from unknown (KOReader fake)
+
+stderr | test/mcp.test.ts > device tools over protocol 2026-07-28 > falls back to the original PNG when encoding fails
+[resize] failed, returning the original PNG: RuntimeError: unreachable
+
+stdout | test/mcp.test.ts > device tools over protocol 2026-07-28 > adds a screenshot after a menu tool
+[hub] 'k-ssbad-true' offline: connection closed (1000 test done)
+
+stdout | test/mcp.test.ts > device tools over protocol 2026-07-28 > adds a screenshot after a menu tool
+[hub] 'k-menu-true' online from unknown (KOReader fake)
+
+ ✓ test/mcp.test.ts > device tools over protocol 2026-07-28 > returns a screenshot as a 536x724 grayscale JPEG 160ms
+ ✓ test/mcp.test.ts > device tools over protocol 2026-07-28 > falls back to the original PNG when encoding fails 20ms
+stdout | test/mcp.test.ts > device tools over protocol 2026-07-28 > forwards JSON params and passes a device error back
+[hub] 'k-menu-true' offline: connection closed (1000 test done)
+
+stdout | test/mcp.test.ts > device tools over protocol 2026-07-28 > forwards JSON params and passes a device error back
+[hub] 'k-fwd-true' online from unknown (KOReader fake)
+
+stdout | test/mcp.test.ts > device tools over protocol 2026-07-28 > says so when the device is not connected
+[hub] 'k-fwd-true' offline: connection closed (1000 test done)
+
+stdout | test/mcp.test.ts > device tools over protocol 2026-07-28 > restarts KOReader and waits for the device to come back
+[hub] 'k-restart-true' online from unknown (KOReader fake)
+
+stdout | test/mcp.test.ts > device tools over protocol 2026-07-28 > restarts KOReader and waits for the device to come back
+[restart] scheduling a KOReader restart on k-restart-true
+
+ ✓ test/mcp.test.ts > device tools over protocol 2026-07-28 > adds a screenshot after a menu tool 145ms
+ ✓ test/mcp.test.ts > device tools over protocol 2026-07-28 > forwards JSON params and passes a device error back 29ms
+ ✓ test/mcp.test.ts > device tools over protocol 2026-07-28 > says so when the device is not connected 12ms
+stdout | test/mcp.test.ts > device tools over protocol 2026-07-28 > restarts KOReader and waits for the device to come back
+[hub] 'k-restart-true' offline: connection closed (1001 restarting)
+
+stdout | test/mcp.test.ts > device tools over protocol 2026-07-28 > restarts KOReader and waits for the device to come back
+[hub] 'k-restart-true' online from unknown (KOReader fake)
+
+ ✓ test/mcp.test.ts > device tools over protocol 2026-07-28 > restarts KOReader and waits for the device to come back 213ms
+stdout | ../../../../../../../../Hub.dropSocket ($HOME/dev/koreader-ppw3/.claude/worktrees/agent-a1cacf61ce6560f0c/kindle-gateway-worker/src/hub.ts:351:28)
+[hub] 'k-restart-true' offline: connection closed (1000 test done)
+
+
+ Test Files  3 passed (3)
+      Tests  92 passed (92)
+   Start at  23:10:29
+   Duration  6.93s (transform 2.98s, setup 0ms, import 9.90s, tests 3.64s, environment 1ms)
+
+exit=0

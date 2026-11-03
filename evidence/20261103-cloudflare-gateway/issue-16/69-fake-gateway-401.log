@@ -1,0 +1,5 @@
+2026-11-03T15:50:36.635Z fake gateway listening on ws://127.0.0.1:8791/device
+2026-11-03T15:50:45.644Z #1 upgrade GET /device from 127.0.0.1 auth=bearer-WRONG
+2026-11-03T15:50:45.644Z #1 -> 401
+2026-11-03T15:55:45.662Z #2 upgrade GET /device from 127.0.0.1 auth=bearer-WRONG
+2026-11-03T15:55:45.662Z #2 -> 401

@@ -1,0 +1,10 @@
+# live-upload.sh against wrangler dev on 127.0.0.1:8788, worktree HEAD 2c2ef19, local R2 state cleared first
+bundle: 20261103-230000.tar.gz, 728 bytes
+upload with the device key                   -> 201 {"ok":true,"path":"live-test/20261103-230000.tar.gz","size":728}
+same name again                              -> 409 {"error":"live-test/20261103-230000.tar.gz already exists"}
+no key                                       -> 401 unauthorized
+agent key                                    -> 401 unauthorized
+bad name                                     -> 400 {"error":"path must be /inbox/<device>/<timestamp>.tar.gz using letters, digits, \".\", \"_\" and \"-\""}
+10 MiB + 1 with Content-Length               -> 413 {"error":"bundle larger than 10485760 bytes"}
+10 MiB + 3 chunked (no length)               -> 413 {"error":"bundle larger than 10485760 bytes"}
+exit=0

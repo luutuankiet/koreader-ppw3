@@ -1,0 +1,21 @@
+ok   older of the last two resolves
+ok   newest resolves
+ok   third-oldest is stale
+ok   still resolves after a new snapshot
+ok   malformed is refused
+ok   missing index is reported
+ok   main menu item
+ok   item text_func and disabled
+ok   list row with right column
+ok   check button
+ok   disabled button
+ok   empty input shows its hint
+ok   plain container is not listed
+ok   adjacent duplicate text collapses, button keeps its label to itself, sizeless button skipped
+ok   idle with nothing dirty
+ok   busy when the top fullscreen window is dirty
+ok   idle when only a window under a fullscreen one is dirty
+ok   busy when a window above the fullscreen one is dirty
+ok   idle when the dirty widget is not on the window stack
+ok   busy when no window covers the screen and one is dirty
+ALL OK

@@ -1,0 +1,29 @@
+== PUT /inbox with device key (R2 not bound)
+{"error":"cannot store bundle: Cannot read properties of undefined (reading 'put')"} [500]
+== registry manifest (#20)
+{
+  "format": 1,
+  "plugins": [
+    {
+      "name": "pluginpackages",
+      "version": "0.2.0",
+      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/pluginpackages-v0.2.0/pluginpackages-0.2.0.tar.gz",
+      "size": 9555,
+      "sha256": "5bfca3e141b1590d9cce7f02f07fa825e692dea79f45df704c1afc3e00b2f65d",
+      "description": "Install, upgrade and roll back plugins from a package host, including this one. Uses WiFi only when you open it.",
+      "fullname": "Plugin packages"
+    },
+    {
+      "name": "syncedhistory",
+      "version": "0.2.0",
+      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/syncedhistory-v0.2.0/syncedhistory-0.2.0.tar.gz",
+      "size": 18776,
+      "sha256": "aad7aa2cd2854d53c70b883270ff860728f80dfa5f17714beb255d6a975f9a1e",
+      "description": "A reading list shared by every device logged into the same progress sync server. Opens the local copy of a book and pulls its latest position.",
+      "fullname": "Synced reading list"
+    }
+  ]
+}
+ [200]
+== release asset sha256 (expect 5bfca3e1...)
+5bfca3e141b1590d9cce7f02f07fa825e692dea79f45df704c1afc3e00b2f65d  -

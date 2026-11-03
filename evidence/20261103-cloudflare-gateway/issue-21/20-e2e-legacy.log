@@ -1,0 +1,86 @@
+2026-11-03T16:22:30.577Z [legacy] protocol 2025-11-25
+2026-11-03T16:22:31.258Z tools (20): action close_top_widget device_status get_current_view get_menu_items go_back hold list_devices list_diagnostics read_diagnostics read_files restart_koreader run_command screenshot select_menu_item send_event snapshot tap tap_text type
+2026-11-03T16:22:31.442Z PASS list_devices {} 183 ms
+[
+  {
+    "name": "emu",
+    "status": "online",
+    "idHash": "e34511414d6a",
+    "koreaderVersion": "v2026.07.1",
+    "pluginVersions": {
+      "koreader_mcp": "0.3.1",
+      "kosyncserverless": "0.2.0",
+      "syncedhistory": "0.2.0",
+      "pluginpackages": "0.1.0"
+    },
+    "remoteAddress": "$OPERATOR_PUBLIC_IP",
+    "connectedAt": "2026-11-03T16:21:53.125Z",
+    "lastMessageAt": "2026-11-03T16:21:53.125Z"
+  }
+]
+2026-11-03T16:22:32.506Z PASS device_status {"device":"emu"} 1064 ms
+{
+  "is_charging": false,
+  "has_wifi": true,
+  "is_kobo": false,
+  "is_kindle": false,
+  "model": "Emulator",
+  "screen_height": 1448,
+  "screen_width": 1072,
+  "battery_level": 83
+}
+2026-11-03T16:22:36.046Z PASS get_current_view {"device":"emu"} 3539 ms
+{
+  "widget_count": 1,
+  "widgets": [
+    {
+      "title": "KOReader",
+      "type": "dialog",
+      "name": "unknown",
+      "dimen": {
+        "y": 0,
+        "w": 1072,
+        "x": 0,
+        "h": 1448
+      }
+    }
+  ],
+  "top_widget": {
+    "title": "KOReader",
+    "type": "dialog",
+    "name": "unknown",
+    "dimen": {
+      "y": 0,
+      "w": 1072,
+      "x": 0,
+      "h": 1448
+    }
+  }
+}
+[image image/jpeg 31912 base64 chars]
+2026-11-03T16:22:36.516Z PASS snapshot {"device":"emu"} 470 ms
+snapshot 1 · window KOReader · 14 widgets
+[1_1] text "KOReader"
+[1_2] text "⁦⁨Home⁩⁩"
+[1_3] icon "home"
+[1_4] icon "plus"
+[1_5] row "⬆ ../"
+[1_6] row "tech/ | 1  2 "
+[1_7] row "Laws of chess - INTERUNFALL Versicherung AG.pdf | 300.7 kB"
+[1_8] row "Thanks for the Feedback - Douglas Stone.epub | 4.5 MB"
+[1_9] button "icon:back.top" (disabled)
+[1_10] button "icon:chevron.first" (disabled)
+[1_11] button "icon:chevron.left" (disabled)
+[1_12] button "Page 1 of 1" (disabled)
+[1_13] button "icon:chevron.right" (disabled)
+[1_14] button "icon:chevron.last" (disabled)
+2026-11-03T16:22:40.992Z PASS screenshot {"device":"emu"} 4476 ms
+{
+  "device": "emu",
+  "size_bytes": 81633
+}
+[image image/jpeg 31912 base64 chars]
+2026-11-03T16:22:40.994Z screenshot: image/jpeg, 23932 bytes
+2026-11-03T16:22:41.450Z FAIL list_diagnostics {"device":"emu"} 456 ms (isError)
+Error: Diagnostics: Cannot read properties of undefined (reading 'list')
+2026-11-03T16:22:41.454Z summary [{"name":"list_devices","ok":true,"ms":183},{"name":"device_status","ok":true,"ms":1064},{"name":"get_current_view","ok":true,"ms":3539},{"name":"snapshot","ok":true,"ms":470},{"name":"screenshot","ok":true,"ms":4476},{"name":"list_diagnostics","ok":false,"ms":456}]

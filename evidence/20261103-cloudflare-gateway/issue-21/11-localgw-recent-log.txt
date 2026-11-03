@@ -1,0 +1,15 @@
+2026-11-03T15:19:41.095746003Z [link] 'kindle-3' online from <lan-ip-1> (KOReader v2026.07.1)
+2026-11-03T15:20:04.565588225Z [link] 'kindle-3' offline: connection closed
+2026-11-03T15:26:09.615586586Z [link] 'kindle-1' online from <lan-ip-2> (KOReader v2026.07.2)
+2026-11-03T15:28:16.136594659Z [forward] Failed to reach kindle-1: Error: Tool call to kindle-1 timed out after 10s
+2026-11-03T15:28:16.136627014Z     at KindleClient.callTool (/app/dist/kindle-client.js:16:23)
+2026-11-03T15:28:16.136634361Z     at async forwardToolCall (/app/dist/gateway-server.js:182:26)
+2026-11-03T15:28:16.136641122Z     at async /app/dist/gateway-server.js:94:221
+2026-11-03T15:28:16.136656796Z     at async McpServer.executeToolHandler (/app/node_modules/@modelcontextprotocol/sdk/dist/cjs/server/mcp.js:290:20)
+2026-11-03T15:28:16.136659847Z     at async /app/node_modules/@modelcontextprotocol/sdk/dist/cjs/server/mcp.js:179:32
+2026-11-03T15:28:16.136662384Z     at async wrappedHandler (/app/node_modules/@modelcontextprotocol/sdk/dist/cjs/server/index.js:117:32)
+2026-11-03T15:29:39.988199317Z [link] 'kindle-1' offline: connection closed
+2026-11-03T15:39:08.484809883Z [link] 'emu' offline: socket error: read ECONNRESET
+2026-11-03T15:48:21.017050499Z [link] 'emu' online from 127.0.0.1 (KOReader v2026.07.1)
+2026-11-03T15:50:43.195649397Z [link] 'emu' offline: connection closed
+2026-11-03T15:57:29.744648870Z [link] 'emu' online from 127.0.0.1 (KOReader v2026.07.1)

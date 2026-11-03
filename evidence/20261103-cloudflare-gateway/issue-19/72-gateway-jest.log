@@ -1,0 +1,329 @@
+# HEAD 2c2ef19
+$ npm test
+
+> kindle-gateway@1.0.0 test
+> jest
+
+PASS tests/ui-snapshot.test.ts (5.427 s)
+PASS tests/kindle-client.test.ts
+  ● Console
+
+    console.log
+      [link] 'test-kindle' online from 127.0.0.1 (KOReader v-test)
+
+      at DeviceLink.onMessage (src/device-link.ts:173:15)
+
+    console.log
+      [link] 'test-kindle' offline: connection closed
+
+      at src/device-link.ts:174:40
+
+    console.log
+      [link] 'test-kindle' online from 127.0.0.1 (KOReader v-test)
+
+      at DeviceLink.onMessage (src/device-link.ts:173:15)
+
+    console.log
+      [link] 'test-kindle' offline: connection closed
+
+      at src/device-link.ts:174:40
+
+    console.log
+      [link] 'test-kindle' online from 127.0.0.1 (KOReader v-test)
+
+      at DeviceLink.onMessage (src/device-link.ts:173:15)
+
+    console.log
+      [link] 'test-kindle' offline: connection closed
+
+      at src/device-link.ts:174:40
+
+    console.log
+      [link] 'test-kindle' online from 127.0.0.1 (KOReader v-test)
+
+      at DeviceLink.onMessage (src/device-link.ts:173:15)
+
+    console.log
+      [link] 'test-kindle' offline: connection closed
+
+      at src/device-link.ts:174:40
+
+PASS tests/device-registry.test.ts (5.928 s)
+  ● Console
+
+    console.log
+      [link] 'kindle1' online from 127.0.0.1 (KOReader v-test)
+
+      at DeviceLink.onMessage (src/device-link.ts:173:15)
+
+    console.log
+      [link] 'kindle1' offline: connection closed
+
+      at src/device-link.ts:174:40
+
+    console.log
+      [link] 'kindle1' online from 127.0.0.1 (KOReader v-test)
+
+      at DeviceLink.onMessage (src/device-link.ts:173:15)
+
+    console.warn
+      [link] refused 'kindle1' from 127.0.0.1: name 'kindle1' is held by another device
+
+      163 |       const attached = registry.attach(hello, link);
+      164 |       if (!attached.ok) {
+    > 165 |         console.warn(`[link] refused '${hello.name}' from ${link.remoteAddress}: ${attached.reason}`);
+          |                 ^
+      166 |         link.send({ type: 'refused', reason: attached.reason });
+      167 |         link.close(attached.reason);
+      168 |         return;
+
+      at DeviceLink.onMessage (src/device-link.ts:165:17)
+      at DeviceLink.onData (src/device-link.ts:127:12)
+      at Socket.<anonymous> (src/device-link.ts:48:47)
+
+    console.log
+      [link] 'kindle1' offline: connection closed
+
+      at src/device-link.ts:174:40
+
+    console.log
+      [link] 'kindle1' online from 127.0.0.1 (KOReader v-test)
+
+      at DeviceLink.onMessage (src/device-link.ts:173:15)
+
+    console.log
+      [link] 'kindle1' offline: connection closed
+
+      at src/device-link.ts:174:40
+
+    console.log
+      [link] 'kindle1' online from 127.0.0.1 (KOReader v-test)
+
+      at DeviceLink.onMessage (src/device-link.ts:173:15)
+
+    console.log
+      [link] 'kindle1' offline: connection closed
+
+      at src/device-link.ts:174:40
+
+    console.log
+      [link] 'kindle1' online from 127.0.0.1 (KOReader v-test)
+
+      at DeviceLink.onMessage (src/device-link.ts:173:15)
+
+    console.log
+      [link] 'kindle1' offline: replaced by a new connection from the same device
+
+      at src/device-link.ts:174:40
+
+    console.log
+      [link] 'kindle1' online from 127.0.0.1 (KOReader v-test)
+
+      at DeviceLink.onMessage (src/device-link.ts:173:15)
+
+    console.log
+      [link] 'kindle1' offline: connection closed
+
+      at src/device-link.ts:174:40
+
+    console.log
+      [link] 'kindle1' online from 127.0.0.1 (KOReader v-test)
+
+      at DeviceLink.onMessage (src/device-link.ts:173:15)
+
+    console.log
+      [link] 'kindle1' offline: socket error: read ECONNRESET
+
+      at src/device-link.ts:174:40
+
+    console.log
+      [link] 'kindle1' online from 127.0.0.1 (KOReader v-test)
+
+      at DeviceLink.onMessage (src/device-link.ts:173:15)
+
+    console.log
+      [link] 'kindle1' offline: silent for 0.12s
+
+      at src/device-link.ts:174:40
+
+    console.log
+      [link] 'kindle1' online from 127.0.0.1 (KOReader v-test)
+
+      at DeviceLink.onMessage (src/device-link.ts:173:15)
+
+    console.log
+      [link] 'kindle1' offline: connection closed
+
+      at src/device-link.ts:174:40
+
+    console.log
+      [link] 'kindle1' online from 127.0.0.1 (KOReader v-test)
+
+      at DeviceLink.onMessage (src/device-link.ts:173:15)
+
+    console.warn
+      [link] 127.0.0.1: dropping a line that is not JSON
+
+      107 |         msg = JSON.parse(line);
+      108 |       } catch {
+    > 109 |         console.warn(`[link] ${this.remoteAddress}: dropping a line that is not JSON`);
+          |                 ^
+      110 |         continue;
+      111 |       }
+      112 |       this.lastMessageAt = new Date();
+
+      at DeviceLink.onData (src/device-link.ts:109:17)
+      at Socket.<anonymous> (src/device-link.ts:48:47)
+
+    console.log
+      [link] 'kindle1' offline: connection closed
+
+      at src/device-link.ts:174:40
+
+    console.log
+      [link] 'kindle1' online from 127.0.0.1 (KOReader v-test)
+
+      at DeviceLink.onMessage (src/device-link.ts:173:15)
+
+    console.log
+      [link] 'kindle1' offline: connection closed
+
+      at src/device-link.ts:174:40
+
+    console.log
+      [link] 'kindle1' online from 127.0.0.1 (KOReader v-test)
+
+      at DeviceLink.onMessage (src/device-link.ts:173:15)
+
+    console.log
+      [link] 'kindle1' offline: connection closed
+
+      at src/device-link.ts:174:40
+
+    console.log
+      [link] 'kindle1' online from 127.0.0.1 (KOReader v-test)
+
+      at DeviceLink.onMessage (src/device-link.ts:173:15)
+
+    console.log
+      [link] 'kindle1' offline: connection closed
+
+      at src/device-link.ts:174:40
+
+PASS tests/publish.test.ts (8.323 s)
+PASS tests/e2e.test.ts (9.382 s)
+  ● Console
+
+    console.log
+      [link] 'test-kindle' online from 127.0.0.1 (KOReader v-test)
+
+      at DeviceLink.onMessage (src/device-link.ts:173:15)
+
+PASS tests/device-commands.test.ts (9.355 s)
+  ● Console
+
+    console.log
+      [link] 'emu' online from 127.0.0.1 (KOReader v-test)
+
+      at DeviceLink.onMessage (src/device-link.ts:173:15)
+
+    console.log
+      [restart] Scheduling KOReader restart on emu
+
+      at restartKoreader (src/gateway-server.ts:473:11)
+
+    console.log
+      [restart] Waiting for emu to reconnect...
+
+      at restartKoreader (src/gateway-server.ts:491:11)
+
+    console.log
+      [link] 'emu' offline: connection closed
+
+      at src/device-link.ts:174:40
+
+    console.log
+      [link] 'emu' online from 127.0.0.1 (KOReader v-test)
+
+      at DeviceLink.onMessage (src/device-link.ts:173:15)
+
+    console.log
+      [link] 'emu' offline: socket error: read ECONNRESET
+
+      at src/device-link.ts:174:40
+
+    console.log
+      [link] 'emu' online from 127.0.0.1 (KOReader v-test)
+
+      at DeviceLink.onMessage (src/device-link.ts:173:15)
+
+    console.log
+      [restart] Scheduling KOReader restart on emu
+
+      at restartKoreader (src/gateway-server.ts:473:11)
+
+    console.log
+      [restart] Waiting for emu to reconnect...
+
+      at restartKoreader (src/gateway-server.ts:491:11)
+
+PASS tests/package-host.test.ts (9.439 s)
+  ● Console
+
+    console.log
+      [kindle-gateway] inbox: pw3-ab12/20261030T101500Z.tar.gz (35 bytes)
+
+      at Array.<anonymous> (src/package-host.ts:124:15)
+
+    console.log
+      [kindle-gateway] inbox: emu/1.tar.gz (35 bytes)
+
+      at Array.<anonymous> (src/package-host.ts:124:15)
+
+    console.log
+      [kindle-gateway] inbox: edge/1.tar.gz (1024 bytes)
+
+      at Array.<anonymous> (src/package-host.ts:124:15)
+
+
+  ●  Cannot log after tests are done. Did you forget to wait for something async in your test?
+    Attempted to log "[link] 'test-kindle' offline: connection closed".
+
+      172 |       link.send({ type: 'welcome', name: hello.name });
+      173 |       console.log(`[link] '${hello.name}' online from ${link.remoteAddress} (KOReader ${hello.koreader_version ?? '?'})`);
+    > 174 |       link.onClose((reason) => console.log(`[link] '${hello.name}' offline: ${reason}`));
+          |                                        ^
+      175 |     });
+      176 |   });
+      177 |   server.listen(port, host);
+
+      at console.log (node_modules/@jest/console/build/BufferedConsole.js:156:10)
+      at src/device-link.ts:174:40
+      at DeviceLink.shutdown (src/device-link.ts:141:41)
+      at Socket.<anonymous> (src/device-link.ts:49:35)
+
+
+  ●  Cannot log after tests are done. Did you forget to wait for something async in your test?
+    Attempted to log "[link] 'emu' offline: connection closed".
+
+      172 |       link.send({ type: 'welcome', name: hello.name });
+      173 |       console.log(`[link] '${hello.name}' online from ${link.remoteAddress} (KOReader ${hello.koreader_version ?? '?'})`);
+    > 174 |       link.onClose((reason) => console.log(`[link] '${hello.name}' offline: ${reason}`));
+          |                                        ^
+      175 |     });
+      176 |   });
+      177 |   server.listen(port, host);
+
+      at console.log (node_modules/@jest/console/build/BufferedConsole.js:156:10)
+      at src/device-link.ts:174:40
+      at DeviceLink.shutdown (src/device-link.ts:141:41)
+      at Socket.<anonymous> (src/device-link.ts:49:35)
+
+PASS tests/diagnostics.test.ts (9.542 s)
+
+Test Suites: 8 passed, 8 total
+Tests:       82 passed, 82 total
+Snapshots:   0 total
+Time:        10.598 s
+Ran all test suites.
+exit=0

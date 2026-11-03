@@ -1,0 +1,20 @@
+{
+  
+  "name": "kindle-gateway-worker",
+  "main": "$HOME/dev/koreader-ppw3/.claude/worktrees/cf-deploy-21/kindle-gateway-worker/src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "observability": { "enabled": true },
+  // Public hostname; Cloudflare creates the DNS record and certificate on deploy.
+  "routes": [{ "pattern": "kindle.kenluu.org", "custom_domain": true }],
+  // The custom domain is the only entry point; no *.workers.dev URL.
+  "workers_dev": false,
+  // Wait after a menu tool before its screenshot, for the e-ink refresh (tests set it to 0).
+  "vars": { "EINK_DELAY_MS": "1500" },
+  "durable_objects": {
+    "bindings": [{ "name": "HUB", "class_name": "Hub" }]
+  },
+  // TEMPORARY deploy config: R2 is not enabled on the account, so no INBOX binding. Diagnostics bundles devices upload, at inbox/<device>/<file>. `wrangler dev` keeps a local copy.
+  // The free plan only offers SQLite-backed Durable Objects.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Hub"] }]
+  // Secrets, never in this file: DEVICE_KEY, AGENT_KEY (`wrangler secret put`, or .dev.vars locally).
+}

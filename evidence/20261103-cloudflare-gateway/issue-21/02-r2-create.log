@@ -1,0 +1,13 @@
+
+ ⛅️ wrangler 4.157.0
+────────────────────
+Creating bucket 'kindle-gateway-inbox'...
+
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mA request to the Cloudflare API (/accounts/$CF_ACCOUNT_ID/r2/buckets) failed.[0m
+
+  Please enable R2 through the Cloudflare Dashboard. [code: 10042]
+  
+  If you think this is a bug, please open an issue at: [4mhttps://github.com/cloudflare/workers-sdk/issues/new/choose[0m
+
+
+🪵  Logs were written to "$HOME/.config/.wrangler/logs/wrangler-2026-11-03_16-15-51_301.log"

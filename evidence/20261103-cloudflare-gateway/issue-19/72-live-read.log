@@ -1,0 +1,76 @@
+# live-read.sh: curl JSON-RPC to POST /mcp (agent key) on wrangler dev 127.0.0.1:8788, worktree HEAD 2c2ef19
+== tools/list
+request: {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}
+http 200
+framing: text/event-stream, one message event
+tools: action close_top_widget device_status get_current_view get_menu_items go_back hold list_devices list_diagnostics read_diagnostics read_files restart_koreader run_command screenshot select_menu_item send_event snapshot tap tap_text type
+  list_diagnostics required: [] properties: ['device']
+  read_diagnostics required: ['device'] properties: ['device', 'file']
+
+== list_diagnostics (all devices)
+request: {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_diagnostics","arguments":{}}}
+http 200
+framing: text/event-stream, one message event
+isError: False
+--- text block
+[
+  {
+    "device": "live-test",
+    "file": "20261103-230000.tar.gz",
+    "size": 728,
+    "received": "2026-11-03T16:11:24.904Z"
+  }
+]
+
+== list_diagnostics device=live-test
+request: {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_diagnostics","arguments":{"device":"live-test"}}}
+http 200
+framing: text/event-stream, one message event
+isError: False
+--- text block
+[
+  {
+    "device": "live-test",
+    "file": "20261103-230000.tar.gz",
+    "size": 728,
+    "received": "2026-11-03T16:11:24.904Z"
+  }
+]
+
+== read_diagnostics device=live-test (newest)
+request: {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"read_diagnostics","arguments":{"device":"live-test"}}}
+http 200
+framing: text/event-stream, one message event
+isError: False
+--- text block
+live-test/20261103-230000.tar.gz, received 2026-11-03T16:11:24.904Z, 728 bytes
+
+--- manifest.json
+{"koreader_version":"v2026.07.1","plugin":"koreader_mcp","device_model":"emulator","sent_at":"2026-11-03 23:00:00"}
+
+
+--- crash.log (new lines only)
+11/03/26-22:58:01 WARN  not a real crash, live check of the R2 inbox
+11/03/26-22:58:02 INFO  second line
+
+
+--- snapshot
+snapshot 7 · window FileManager · 2 widgets
+[7_1] button "Home"
+[7_2] text "diagnostics live check"
+--- image block: image/png, 7699 bytes, png magic True, 1072x1448
+
+== read_diagnostics unknown bundle
+request: {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"read_diagnostics","arguments":{"device":"live-test","file":"19990101-000000.tar.gz"}}}
+http 200
+framing: text/event-stream, one message event
+isError: True
+--- text block
+Error: Diagnostics: no bundle 19990101-000000.tar.gz for device live-test
+
+== list_diagnostics with the device key (must be refused)
+request: {"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"list_diagnostics","arguments":{}}}
+http 401
+unauthorized
+
+exit=0
