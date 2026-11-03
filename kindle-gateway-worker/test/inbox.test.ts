@@ -1,7 +1,7 @@
 import { SELF, env } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { listBundles, listDiagnostics, readDiagnostics, type ToolResult } from '../src/diagnostics-tools';
-import { INBOX_MAX_BYTES } from '../src/inbox';
+import { INBOX_MAX_BUNDLES, INBOX_MAX_BYTES, inboxRoute } from '../src/inbox';
 // Bundles built like the device builds them, and what kindle-gateway's list_diagnostics and
 // read_diagnostics answered for them (captured from that implementation, images summarised).
 import golden from './fixtures/diagnostics-golden.json';
@@ -104,6 +104,33 @@ describe('PUT /inbox/<device>/<file>', () => {
       const res = await put('/inbox/up-big/streamed.tar.gz', streamOf(INBOX_MAX_BYTES + 1));
       expect(res.status).toBe(413);
       expect(await env.INBOX.head('inbox/up-big/streamed.tar.gz')).toBeNull();
+    });
+  });
+
+  describe('bundle cap', () => {
+    function req(path: string): Request {
+      return new Request(`https://gw.example${path}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${DEVICE_KEY}`, 'Content-Length': String(GZIP.length) },
+        body: GZIP,
+      });
+    }
+
+    it('refuses with 507 once the bucket holds the cap, storing nothing', async () => {
+      const held = (await stored()).length;
+      const res = await inboxRoute(req('/inbox/up-cap/full.tar.gz'), env, INBOX_MAX_BYTES, held);
+      expect(res.status).toBe(507);
+      expect(await env.INBOX.head('inbox/up-cap/full.tar.gz')).toBeNull();
+    });
+
+    it('takes a bundle while there is room for one more', async () => {
+      const held = (await stored()).length;
+      const res = await inboxRoute(req('/inbox/up-cap/room.tar.gz'), env, INBOX_MAX_BYTES, held + 1);
+      expect(res.status).toBe(201);
+    });
+
+    it('caps the bucket at 2 GB of bundles', () => {
+      expect(INBOX_MAX_BUNDLES * INBOX_MAX_BYTES).toBeLessThanOrEqual(2 * 1024 ** 3);
     });
   });
 
