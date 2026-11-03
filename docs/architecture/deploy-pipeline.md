@@ -1,7 +1,7 @@
 ---
 title: Plugin deploy pipeline
-covers: how a plugin directory gets onto a Kindle, where the gateway reads plugin source, shell fallbacks, plugin packages and the upload inbox
-verified: 2026-10-31
+covers: how a plugin directory gets onto a Kindle, where the gateway reads plugin source, shell fallbacks, plugin packages (gateway /pkg/ and GitHub Releases with registry/index.json) and the upload inbox
+verified: 2026-11-03
 ---
 
 # Plugin deploy pipeline
@@ -16,12 +16,14 @@ verified: 2026-10-31
 
 ## Packages for the on-device installer
 
-Kindles reach only the LAN and run no agent server, so they pull plugins instead of receiving pushes.
+Kindles run no agent server, so they pull plugins instead of receiving pushes: from the gateway's `/pkg/` on the LAN, or from GitHub Releases listed in `registry/index.json`.
 
 - `scripts/publish.sh <plugin>...` (bare name, `<name>.koplugin`, or a path to a `.koplugin` folder such as the separate `rssreader.koplugin` repo) writes `<name>-<version>.tar.gz` into `PKG_DIR` (default `tmp/packages/pkg` in the repo, gitignored, created if missing), then rebuilds `index.json` from every archive there: one entry per plugin, its highest version, with `size`, `sha256`, `description`, `fullname` and `min_koreader` from `_meta.lua`.
 - An archive holds only the files git would commit, so gitignored personal config (rssreader's `rssreader_configuration.lua`, which holds credentials) never ships; dotfiles, tests, `*.patch` and `*.md` are dropped too. Its only top-level entry is `<name>.koplugin/`.
 - The version is `version = "..."` in `_meta.lua`; a plugin without one is refused. Builds are byte-for-byte reproducible, and changed content under an already-published version is refused unless `--force`: bump the version.
 - The gateway serves the folder read-only at `GET /pkg/` and stores `PUT /inbox/<device>/<timestamp>.tar.gz` in `INBOX_HOST_DIR` (gzip only, never overwrites, `INBOX_MAX_BYTES` cap). Both routes live in `kindle-gateway/src/package-host.ts`, mounted in `src/index.ts` ahead of the gateway app, whose JSON body parser would otherwise swallow an upload.
+- `scripts/publish.sh --github <plugin>...` builds the same archive into `GH_DIR` (default `tmp/packages/github`, so the gateway's `/pkg/` index never lists it), runs `gh release create <name>-v<version> <archive> --repo luutuankiet/koreader-ppw3`, then adds or replaces that plugin's entry in `registry/index.json` (sorted by name). The entry has `url` `https://github.com/luutuankiet/koreader-ppw3/releases/download/<name>-v<version>/<name>-<version>.tar.gz` instead of `file`; the other fields are the same as in `/pkg/`. The release is created before the entry is written. `--dry-run` prints the `gh` command and writes the entry without calling `gh`. `GH_REPO` and `REGISTRY` override the repository and the manifest path.
+- `registry/index.json` reaches devices only once merged to `main`: the installer's default list is `https://raw.githubusercontent.com/luutuankiet/koreader-ppw3/main/registry/index.json`. A release tag's asset is immutable in practice, so ship changes as a new version, never a replaced asset.
 - Installing replaces the whole `<name>.koplugin/` folder, so a plugin that keeps user config inside its folder (rssreader does) loses it unless the installer carries those files across.
 
 ## After a gateway code change

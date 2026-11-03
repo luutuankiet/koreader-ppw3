@@ -21,9 +21,9 @@ something is implemented.
 
 | page | covers | verified |
 |---|---|---|
-| [Plugin deploy pipeline](../../../docs/architecture/deploy-pipeline.md) | how a plugin directory gets onto a Kindle, where the gateway reads plugin source, shell fallbacks, plugin packages and the upload inbox | 2026-10-31 |
+| [Plugin deploy pipeline](../../../docs/architecture/deploy-pipeline.md) | how a plugin directory gets onto a Kindle, where the gateway reads plugin source, shell fallbacks, plugin packages (gateway /pkg/ and GitHub Releases with registry/index.json) and the upload inbox | 2026-11-03 |
 | [Device bridge (agent to Kindle)](../../../docs/architecture/device-bridge.md) | how an agent call reaches a Kindle, which file owns the gateway tools, the stateless MCP transport, the dial-out connection and live sessions, screenshots and running on Android | 2026-11-03 |
-| [Plugin installer](../../../docs/architecture/plugin-installer.md) | where the on-device plugin installer reads the package list, downloads and checks an archive, swaps the plugin folder, keeps the backup and rolls back | 2026-10-31 |
+| [Plugin installer](../../../docs/architecture/plugin-installer.md) | where the on-device plugin installer reads the package list, downloads and checks an archive, swaps the plugin folder, keeps the backup and rolls back | 2026-11-03 |
 | [Synced reading list plugin](../../../docs/architecture/synced-reading-list.md) | where the synced reading list sets the progress sync device id from the Kindle serial, fetches the server list, maps books to local files under any of their merged file names, builds rows, filters and searches, refreshes, shows the long-press pop-up, removes a book from the list, chooses which progress sync plugin it works with, and opens a book at its synced position | 2026-11-03 |
 
 <!-- END GENERATED INDEX -->

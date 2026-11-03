@@ -177,8 +177,48 @@ function Core.compareVersions(a, b)
     end
 end
 
+--- The public package list: a manifest whose entries point at GitHub Release assets.
+Core.DEFAULT_INDEX = "https://raw.githubusercontent.com/luutuankiet/koreader-ppw3/main/registry/index.json"
+
+--[[--
+Where to read the package list, and the base URL that a `file` entry is relative to.
+
+The host setting holds either the URL of a manifest (ends in ".json", such as
+DEFAULT_INDEX) or, as saved by earlier versions, a folder that holds
+index.json (the gateway's http://<host>:9999/pkg/).
+]]
+function Core.indexLocation(host)
+    host = (host or ""):match("^%s*(.-)%s*$")
+    if host == "" then host = Core.DEFAULT_INDEX end
+    if host:match("%.json$") then
+        return host, host:match("^(.*/)") or host
+    end
+    if host:sub(-1) ~= "/" then host = host .. "/" end
+    return host .. "index.json", host
+end
+
+--- The URL to download an entry from: its own `url`, else `file` under base.
+function Core.packageUrl(entry, base)
+    return entry.url or (base .. entry.file)
+end
+
+local function safeFile(file)
+    return type(file) == "string" and file:match("^[%w_%-][%w_.%-+]*$") and not file:find("..", 1, true)
+end
+
+-- Only absolute https URLs to a plain host name: no credentials, no spaces or
+-- control characters. Plain http would let anyone on the path swap the archive
+-- before the checksum from the same untrusted path is compared.
+local function safeUrl(url)
+    return type(url) == "string"
+        and url:match("^https://[%w][%w.%-]*[%w]:?%d*/[%w%-._~/%%+=&?:@,;!]*$") ~= nil
+        and not url:find("..", 1, true)
+end
+
 --- Decoded index.json to a list of checked entries. An entry that would make
--- a path out of hostile text is dropped: name and file become paths and URLs.
+-- a path or a URL out of hostile text is dropped. An entry names its archive
+-- either with `url` (absolute https, as in the GitHub manifest) or with `file`
+-- (relative to the index, as on the gateway's /pkg/). sha256 is required.
 function Core.parseIndex(index)
     if type(index) ~= "table" or index.format ~= 1 or type(index.plugins) ~= "table" then
         return nil, "not a package index"
@@ -187,7 +227,9 @@ function Core.parseIndex(index)
     for _, p in ipairs(index.plugins) do
         if type(p) == "table"
             and type(p.name) == "string" and p.name:match("^[%w_%-]+$")
-            and type(p.file) == "string" and p.file:match("^[%w_%-][%w_.%-+]*$") and not p.file:find("..", 1, true)
+            and (p.url == nil or safeUrl(p.url))
+            and (p.file == nil or safeFile(p.file))
+            and (p.url ~= nil or p.file ~= nil)
             and type(p.version) == "string"
             and type(p.sha256) == "string" and p.sha256:match("^%x+$") and #p.sha256 == 64
             and type(p.size) == "number"
@@ -196,6 +238,127 @@ function Core.parseIndex(index)
         end
     end
     return plugins
+end
+
+--[[--
+Does a certificate name host? Checks subjectAltName DNS names, or the subject
+common name when there are none. A wildcard covers exactly one leftmost label.
+LuaSec checks the chain against the CA file but never the host name, so without
+this any valid certificate for any site would be accepted.
+
+@tparam table names DNS names from the certificate
+@tparam string host
+]]
+function Core.hostMatches(names, host)
+    host = host:lower()
+    for _, name in ipairs(names) do
+        name = tostring(name):lower()
+        if name == host then return true end
+        local suffix = name:match("^%*(%.[^*]+%.[^*]+)$")
+        if suffix and host:sub(-#suffix) == suffix then
+            local label = host:sub(1, #host - #suffix)
+            if label ~= "" and not label:find(".", 1, true) then return true end
+        end
+    end
+    return false
+end
+
+local function certNames(cert)
+    local names = {}
+    local exts = cert:extensions() or {}
+    for _, ext in pairs(exts) do
+        if type(ext) == "table" and type(ext.dNSName) == "table" then
+            for _, n in ipairs(ext.dNSName) do names[#names + 1] = n end
+        end
+    end
+    if #names == 0 then
+        for _, field in ipairs(cert:subject() or {}) do
+            if field.name == "commonName" or field.oid == "2.5.4.3" then names[#names + 1] = field.value end
+        end
+    end
+    return names
+end
+
+-- KOReader ships Mozilla's CA list here (relative to the install folder, which
+-- is the working directory) but its socket.http and LuaSec use verify = "none".
+Core.CA_FILE = "data/ca-bundle.crt"
+
+--- A LuaSocket `create` for https that checks the chain against cafile and
+-- the host name against the certificate.
+function Core.verifiedTls(cafile)
+    local https = require("ssl.https")
+    local make = https.tcp{
+        verify = { "peer", "fail_if_no_peer_cert" },
+        cafile = cafile or Core.CA_FILE,
+    }
+    return function()
+        local conn = make()
+        local connect = conn.connect
+        function conn:connect(host, port)
+            connect(self, host, port)
+            local cert = self.sock:getpeercertificate()
+            if not cert or not Core.hostMatches(certNames(cert), host) then
+                self.sock:close()
+                return nil, "certificate is not for " .. tostring(host)
+            end
+            return 1
+        end
+        return conn
+    end
+end
+
+local REDIRECT = { [301] = true, [302] = true, [303] = true, [307] = true, [308] = true }
+
+--[[--
+One HTTP GET to a file, or to a string when path is nil. Needs KOReader's
+socket modules; the installer runs it in a subprocess. https certificates are
+checked with CA_FILE.
+
+Redirects are followed here, not by socket.http: GitHub sends release
+downloads to release-assets.githubusercontent.com, and socket.http drops a
+caller's `create` on a redirect (it compares the new scheme with the caller's
+table, which has none), so that second host would go unchecked.
+
+@treturn true (file) or string (body), or nil, err
+]]
+function Core.httpGet(url, path)
+    local http = require("socket.http")
+    local socket_url = require("socket.url")
+    local socketutil = require("socketutil")
+    local tls
+    for _ = 1, 6 do
+        local chunks, sink = {}, nil
+        if path then
+            local f, err = io.open(path, "wb")
+            if not f then return nil, err end
+            socketutil:set_timeout(socketutil.FILE_BLOCK_TIMEOUT, socketutil.FILE_TOTAL_TIMEOUT)
+            sink = socketutil.file_sink(f)
+        else
+            socketutil:set_timeout()
+            sink = socketutil.table_sink(chunks)
+        end
+        local is_https = url:match("^https://") ~= nil
+        if is_https and not tls then tls = Core.verifiedTls() end
+        local ok, code, headers, status = http.request{
+            url = url, method = "GET", sink = sink, redirect = false,
+            create = is_https and tls or nil,
+        }
+        socketutil:reset_timeout()
+        if not ok then return nil, tostring(code) end
+        local location = headers and headers.location
+        if REDIRECT[code] and location then
+            local next_url = socket_url.absolute(url, location)
+            if is_https and not next_url:match("^https://") then
+                return nil, "redirect leaves https: " .. next_url
+            end
+            url = next_url
+        elseif code ~= 200 then
+            return nil, tostring(status or code)
+        else
+            return path and true or table.concat(chunks)
+        end
+    end
+    return nil, "too many redirects"
 end
 
 function Core.sha256File(path)
@@ -273,15 +436,16 @@ Download, check and unpack a package into the stage. Touches nothing else.
 @tparam table entry an entry from parseIndex
 @tparam table opts
   root   plugins folder
-  url    package URL
-  fetch  function(url, path) -> true or nil, err
+  url    package URL (Core.packageUrl)
+  fetch  function(url, path) -> true or nil, err (Core.httpGet)
   no_archiver  (optional) use tar even where ffi/archiver exists
 @treturn string the path of the unpacked plugin folder, or nil, err
 ]]
 function Core.prepare(entry, opts)
     local stage, err = freshStage(opts.root)
     if not stage then return nil, err end
-    local archive = stage .. "/" .. entry.file
+    -- A `url` entry has no `file`; its name is checked, so it makes a safe one.
+    local archive = stage .. "/" .. (entry.file or (entry.name .. ".tar.gz"))
     local ok
     ok, err = opts.fetch(opts.url, archive)
     if not ok then return nil, "download failed: " .. tostring(err) end
