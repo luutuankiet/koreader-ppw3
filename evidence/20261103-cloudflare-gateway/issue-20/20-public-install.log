@@ -1,0 +1,32 @@
+has monolibtic? no (libs/libkoreader-monolibtic.so: cannot open shared object file: No such file or directory)
+lib_search_path: libs/?
+lib_basic_format: lib%s.so
+lib_version_format: lib%s.so.%s
+ffi.load: rt.so.1 (RTLD_GLOBAL)
+ffi.findlib: utf8proc [3]
+ffi.load: libs/libutf8proc.so.3
+index: https://raw.githubusercontent.com/luutuankiet/koreader-ppw3/main/registry/index.json
+ffi.findlib: SDL3 [0]
+ffi.load: libs/libSDL3.so.0
+ffi.findlib: blitbuffer
+ffi.load: libs/libblitbuffer.so
+Started SDL in /mnt/us/koreader/ using x11 video driver
+ffi.findlib: lodepng
+ffi.load: libs/liblodepng.so
+11/03/26-16:00:00 INFO  initializing for device Emulator 
+11/03/26-16:00:00 INFO  framebuffer resolution: {
+  h = 1448,
+  w = 1072
+} --[[table: 0x7c9180d04138]] 
+PASS manifest downloaded with TLS checks: nil
+PASS manifest parsed nil
+  entry pluginpackages 0.2.0
+  entry syncedhistory 0.2.0
+PASS syncedhistory listed
+ffi.findlib: archive [13]
+ffi.load: libs/libarchive.so.13
+PASS prepare: downloaded, size and sha256 match, version 0.2.0 nil
+PASS swapped into /tmp/pp20/plugins
+PASS installed version reads 0.2.0
+ALL PASS
+exit=0

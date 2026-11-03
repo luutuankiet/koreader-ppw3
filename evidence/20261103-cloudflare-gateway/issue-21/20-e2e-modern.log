@@ -1,0 +1,130 @@
+2026-11-03T16:22:51.429Z [modern] protocol 2026-07-28
+2026-11-03T16:22:53.815Z tools (20): action close_top_widget device_status get_current_view get_menu_items go_back hold list_devices list_diagnostics read_diagnostics read_files restart_koreader run_command screenshot select_menu_item send_event snapshot tap tap_text type
+2026-11-03T16:22:54.001Z PASS list_devices {} 185 ms
+[
+  {
+    "name": "emu",
+    "status": "online",
+    "idHash": "e34511414d6a",
+    "koreaderVersion": "v2026.07.1",
+    "pluginVersions": {
+      "koreader_mcp": "0.3.1",
+      "kosyncserverless": "0.2.0",
+      "syncedhistory": "0.2.0",
+      "pluginpackages": "0.1.0"
+    },
+    "remoteAddress": "$OPERATOR_PUBLIC_IP",
+    "connectedAt": "2026-11-03T16:21:53.125Z",
+    "lastMessageAt": "2026-11-03T16:22:40.737Z"
+  }
+]
+2026-11-03T16:22:55.223Z PASS device_status {"device":"emu"} 1222 ms
+{
+  "is_charging": false,
+  "has_wifi": true,
+  "is_kobo": false,
+  "is_kindle": false,
+  "model": "Emulator",
+  "screen_height": 1448,
+  "screen_width": 1072,
+  "battery_level": 83
+}
+2026-11-03T16:23:00.204Z PASS get_current_view {"device":"emu"} 4980 ms
+{
+  "widget_count": 1,
+  "widgets": [
+    {
+      "title": "KOReader",
+      "type": "dialog",
+      "name": "unknown",
+      "dimen": {
+        "y": 0,
+        "w": 1072,
+        "x": 0,
+        "h": 1448
+      }
+    }
+  ],
+  "top_widget": {
+    "title": "KOReader",
+    "type": "dialog",
+    "name": "unknown",
+    "dimen": {
+      "y": 0,
+      "w": 1072,
+      "x": 0,
+      "h": 1448
+    }
+  }
+}
+[image image/jpeg 31912 base64 chars]
+2026-11-03T16:23:00.559Z PASS snapshot {"device":"emu"} 355 ms
+snapshot 2 · window KOReader · 14 widgets
+[2_1] text "KOReader"
+[2_2] text "⁦⁨Home⁩⁩"
+[2_3] icon "home"
+[2_4] icon "plus"
+[2_5] row "⬆ ../"
+[2_6] row "tech/ | 1  2 "
+[2_7] row "Laws of chess - INTERUNFALL Versicherung AG.pdf | 300.7 kB"
+[2_8] row "Thanks for the Feedback - Douglas Stone.epub | 4.5 MB"
+[2_9] button "icon:back.top" (disabled)
+[2_10] button "icon:chevron.first" (disabled)
+[2_11] button "icon:chevron.left" (disabled)
+[2_12] button "Page 1 of 1" (disabled)
+[2_13] button "icon:chevron.right" (disabled)
+[2_14] button "icon:chevron.last" (disabled)
+2026-11-03T16:23:00.962Z FAIL tap {"device":"emu","ref":"2_1"} 402 ms (isError)
+Error: widget has no size on screen
+2026-11-03T16:23:01.364Z FAIL go_back {"device":"emu"} 401 ms (isError)
+Error: Device error: No menu widget is currently visible
+2026-11-03T16:23:05.374Z PASS screenshot {"device":"emu"} 4010 ms
+{
+  "device": "emu",
+  "size_bytes": 81633
+}
+[image image/jpeg 31912 base64 chars]
+2026-11-03T16:23:05.376Z screenshot: image/jpeg, 23932 bytes
+2026-11-03T16:23:05.552Z FAIL list_diagnostics {"device":"emu"} 176 ms (isError)
+Error: Diagnostics: Cannot read properties of undefined (reading 'list')
+2026-11-03T16:23:12.301Z PASS restart_koreader {"device":"emu"} 6749 ms
+{
+  "device": "emu",
+  "restarted": true,
+  "status": "online"
+}
+2026-11-03T16:23:12.453Z PASS list_devices {} 152 ms
+[
+  {
+    "name": "emu",
+    "status": "online",
+    "idHash": "e34511414d6a",
+    "koreaderVersion": "v2026.07.1",
+    "pluginVersions": {
+      "pluginpackages": "0.1.0",
+      "koreader_mcp": "0.3.1",
+      "kosyncserverless": "0.2.0",
+      "syncedhistory": "0.2.0"
+    },
+    "remoteAddress": "$OPERATOR_PUBLIC_IP",
+    "connectedAt": "2026-11-03T16:23:12.200Z",
+    "lastMessageAt": "2026-11-03T16:23:12.200Z"
+  }
+]
+2026-11-03T16:23:12.918Z PASS snapshot {"device":"emu"} 464 ms
+snapshot 1 · window KOReader · 14 widgets
+[1_1] text "KOReader"
+[1_2] text "⁦⁨Home⁩⁩"
+[1_3] icon "home"
+[1_4] icon "plus"
+[1_5] row "⬆ ../"
+[1_6] row "tech/ | 1  2 "
+[1_7] row "Laws of chess - INTERUNFALL Versicherung AG.pdf | 300.7 kB"
+[1_8] row "Thanks for the Feedback - Douglas Stone.epub | 4.5 MB"
+[1_9] button "icon:back.top" (disabled)
+[1_10] button "icon:chevron.first" (disabled)
+[1_11] button "icon:chevron.left" (disabled)
+[1_12] button "Page 1 of 1" (disabled)
+[1_13] button "icon:chevron.right" (disabled)
+[1_14] button "icon:chevron.last" (disabled)
+2026-11-03T16:23:12.926Z summary [{"name":"list_devices","ok":true,"ms":185},{"name":"device_status","ok":true,"ms":1222},{"name":"get_current_view","ok":true,"ms":4980},{"name":"snapshot","ok":true,"ms":355},{"name":"tap","ok":false,"ms":402},{"name":"go_back","ok":false,"ms":401},{"name":"screenshot","ok":true,"ms":4010},{"name":"list_diagnostics","ok":false,"ms":176},{"name":"restart_koreader","ok":true,"ms":6749},{"name":"list_devices","ok":true,"ms":152},{"name":"snapshot","ok":true,"ms":464}]

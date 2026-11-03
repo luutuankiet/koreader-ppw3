@@ -1,10 +1,14 @@
 --[[
-A live-mode session: one TCP connection dialled out to the gateway, carrying tool calls.
+A live-mode session: one connection dialled out to the gateway (raw TCP, or a WebSocket
+through ws.lua), carrying tool calls.
 Outside a session there is no socket and no timer. Everything that touches KOReader or the
 network is passed in as `deps`, so test_live.lua runs this file on plain luajit.
 
 deps:
-  connect(host, port)  -> sock | nil, err   sock has send, receive, settimeout, close
+  connect()            -> sock | nil, err, kind   sock has send, receive, settimeout, close;
+                        kind "rejected" means the gateway turned the device key down.
+                        A raw TCP socket carries JSON lines; ws.lua's connection carries one
+                        message per text frame behind the same receive("*l") and send.
   schedule(seconds, fn) -> handle           unschedule(handle)
   now()                -> seconds
   json                 { encode, decode }
@@ -28,6 +32,12 @@ Live.SLOW_POLL = 2
 Live.FAST_WINDOW = 10
 Live.RETRY_DELAYS = { 5, 15, 60 }
 Live.MAX_LINES_PER_TICK = 8
+-- A wrong device key does not fix itself: an always-on session asks again this rarely.
+Live.REJECTED_DELAY = 300
+-- Byte-identical every time, so the Cloudflare gateway can answer it with
+-- setWebSocketAutoResponse without waking up. Never build it from a table.
+Live.PING = '{"type":"ping"}'
+Live.PONG = '{"type":"pong"}'
 
 -- always=true is the emulator: it never ends on idle or battery and never stops retrying.
 function Live.new(deps, opts)
@@ -94,16 +104,21 @@ function Live:_drop()
 end
 
 function Live:_send(msg)
+    return self:_send_text(self.deps.json.encode(msg))
+end
+
+function Live:_send_text(text)
     -- Non-blocking sockets lose the tail of a big reply, so sends wait.
     self.sock:settimeout(30)
-    local ok, err = self.sock:send(self.deps.json.encode(msg) .. "\n")
+    local ok, err = self.sock:send(text .. "\n")
     if self.sock then self.sock:settimeout(0) end
     return ok, err
 end
 
 function Live:_connect()
     self.state = "connecting"
-    local sock, err = self.deps.connect(self.host, self.port)
+    local sock, err, kind = self.deps.connect()
+    if not sock and kind == "rejected" then return self:_rejected(err) end
     if not sock then return self:_lost("connect failed: " .. tostring(err)) end
     self.sock = sock
     local hello = self.deps.identity()
@@ -129,6 +144,16 @@ function Live:_lost(reason)
     end
     self.state = "waiting"
     self:_after(delay, function() self:_connect() end)
+end
+
+-- The gateway turned the device key down. On a Kindle the session ends, as for a refused
+-- name; the emulator waits REJECTED_DELAY, never the short retry delays.
+function Live:_rejected(reason)
+    self:_drop()
+    self.deps.log("live mode rejected: " .. tostring(reason))
+    if not self.always then return self:stop(reason) end
+    self.state = "waiting"
+    self:_after(Live.REJECTED_DELAY, function() self:_connect() end)
 end
 
 function Live:_schedule_tick()
@@ -162,7 +187,7 @@ function Live:_tick()
     if now - self.last_heard >= Live.SILENCE then return self:_lost("gateway silent") end
     if now - self.last_ping >= Live.HEARTBEAT then
         self.last_ping = now
-        local ok, err = self:_send({ type = "ping" })
+        local ok, err = self:_send_text(Live.PING)
         if not ok then return self:_lost(err) end
     end
     self:_schedule_tick()
@@ -235,6 +260,37 @@ function Live.identity(opts)
     end
     local name = opts.stored_name or opts.config_name or "koreader"
     return { name = name, id_hash = opts.sha256("config:" .. (opts.config_name or name)):sub(1, 12) }
+end
+
+--[[
+Where to dial. stored holds the plugin settings (url, key, host, port), config the
+config.lua values (gateway_url, gateway_key, gateway_host, gateway_port); stored wins.
+A ws:// or wss:// URL selects WebSocket, anything else raw TCP host:port as before.
+-> { kind = "ws", url, tls, host, port, path, key } | { kind = "tcp", host, port }
+]]
+function Live.gatewayTarget(stored, config, default_host, default_port)
+    local function set(v) return type(v) == "string" and v ~= "" and v or nil end
+    local url = set(stored.url)
+    if not url and not stored.host then url = set(config.gateway_url) end
+    local target = url and require("ws").parse_url(url)
+    if target then
+        target.kind = "ws"
+        target.url = url
+        target.key = set(stored.key) or set(config.gateway_key)
+        return target
+    end
+    return {
+        kind = "tcp",
+        host = stored.host or config.gateway_host or default_host,
+        port = tonumber(stored.port or config.gateway_port) or default_port,
+    }
+end
+
+-- The HTTP origin of a WebSocket gateway, for the diagnostics inbox.
+function Live.httpOrigin(target)
+    local origin = (target.tls and "https://" or "http://") .. target.host
+    if target.explicit_port then origin = origin .. ":" .. target.port end
+    return origin
 end
 
 function Live.validName(name)

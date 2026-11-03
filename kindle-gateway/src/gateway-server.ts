@@ -9,6 +9,7 @@ import { z } from 'zod';
 import sharp from 'sharp';
 import * as crypto from 'crypto';
 import { buildRestartCommand, resolvePluginSource } from './device-commands';
+import { bundleText } from './bundle-format';
 import { listBundles, readBundle } from './diagnostics';
 import { packageHostOptionsFromEnv } from './package-host';
 import { SnapshotTracker, UiActResult, UiSnapshot, formatActResult, formatSnapshot, DEFAULT_MAX_LINES } from './ui-snapshot';
@@ -423,14 +424,7 @@ async function diagnosticsResult(read: () => ToolResult | Promise<ToolResult>): 
 
 async function readDiagnosticsTool(inboxDir: string, device: string, file?: string): Promise<ToolResult> {
   const bundle = readBundle(inboxDir, device, file);
-  const text = (name: string) => bundle.files[name]?.toString('utf8');
-  const parts = [`${bundle.device}/${bundle.file}, received ${bundle.received}, ${bundle.size} bytes`];
-  parts.push(`--- manifest.json\n${text('manifest.json') ?? '(missing)'}`);
-  parts.push(`--- crash.log (new lines only)\n${text('crash.log') || '(no new lines)'}`);
-  const snapshot = text('snapshot.json');
-  // All lines: unlike a live snapshot, this one cannot be asked for again.
-  parts.push(`--- snapshot\n${snapshot ? formatSnapshot(JSON.parse(snapshot) as UiSnapshot, Number.MAX_SAFE_INTEGER).join('\n') : '(missing)'}`);
-  const content: ContentBlock[] = [{ type: 'text', text: parts.join('\n\n') }];
+  const content: ContentBlock[] = [{ type: 'text', text: bundleText(bundle, bundle.files) }];
   const png = bundle.files['screenshot.png'];
   if (png) {
     const img = await resizeScreenshot(png.toString('base64'));

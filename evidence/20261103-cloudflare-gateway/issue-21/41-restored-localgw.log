@@ -1,0 +1,33 @@
+Tue Nov  3 04:42:42 PM UTC 2026
+[
+  {
+    "name": "emu",
+    "status": "online",
+    "idHash": "e34511414d6a",
+    "koreaderVersion": "v2026.07.1",
+    "pluginVersions": {
+      "kosyncserverless": "0.2.0",
+      "syncedhistory": "0.2.0",
+      "pluginpackages": "0.1.0",
+      "koreader_mcp": "0.3.1"
+    },
+    "remoteAddress": "127.0.0.1",
+    "connectedAt": "2026-11-03T16:42:35.169Z",
+    "lastMessageAt": "2026-11-03T16:42:35.169Z"
+  }
+]
+snapshot 1 · window KOReader · 14 widgets
+[1_1] text "KOReader"
+[1_2] text "⁦⁨Home⁩⁩"
+[1_3] icon "home"
+[1_4] icon "plus"
+[1_5] row "⬆ ../"
+[1_6] row "tech/ | 1  2 "
+[1_7] row "Laws of chess - INTERUNFALL Versicherung AG.pdf | 300.7 kB"
+[1_8] row "Thanks for the Feedback - Douglas Stone.epub | 4.5 MB"
+[1_9] button "icon:back.top" (disabled)
+[1_10] button "icon:chevron.first" (disabled)
+[1_11] button "icon:chevron.left" (disabled)
+[1_12] button "Page 1 of 1" (disabled)
+[1_13] button "icon:chevron.right" (disabled)
+[1_14] button "icon:chevron.last" (disabled)

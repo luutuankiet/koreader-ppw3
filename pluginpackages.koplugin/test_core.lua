@@ -267,6 +267,100 @@ do
     check(Core.parseIndex("x") == nil, "non-table index refused")
 end
 
+-- Entries from the GitHub manifest name their archive with an absolute https url.
+do
+    local sha = string.rep("b", 64)
+    local good = { name = "a", version = "1", size = 1, sha256 = sha,
+        url = "https://github.com/luutuankiet/koreader-ppw3/releases/download/a-v1/a-1.tar.gz" }
+    local function with(k, v)
+        local e = {}
+        for key, val in pairs(good) do e[key] = val end
+        e[k] = v
+        return e
+    end
+    local old = { name = "b", version = "1", file = "b-1.tar.gz", size = 1, sha256 = sha }
+    local list = Core.parseIndex{ format = 1, plugins = { good, old } }
+    check(#list == 2 and list[1] == good and list[2] == old, "url entry and file entry both accepted")
+
+    local bad = {
+        { "http", with("url", "http://github.com/x/a-1.tar.gz") },
+        { "ftp", with("url", "ftp://github.com/a-1.tar.gz") },
+        { "javascript", with("url", "javascript:alert(1)") },
+        { "relative", with("url", "a-1.tar.gz") },
+        { "scheme-relative", with("url", "//github.com/a-1.tar.gz") },
+        { "credentials", with("url", "https://user:pw@github.com/a-1.tar.gz") },
+        { "space", with("url", "https://github.com/a 1.tar.gz") },
+        { "newline", with("url", "https://github.com/a\n1.tar.gz") },
+        { "dot-dot", with("url", "https://github.com/../a-1.tar.gz") },
+        { "no path", with("url", "https://github.com") },
+        { "not a string", with("url", 5) },
+        { "missing sha256", with("sha256", nil) },
+        { "short sha256", with("sha256", "abc") },
+        { "bad file beside url", with("file", "../a.tar.gz") },
+        { "neither url nor file", with("url", nil) },
+    }
+    for _, case in ipairs(bad) do
+        list = Core.parseIndex{ format = 1, plugins = { case[2] } }
+        check(#list == 0, "url entry refused: " .. case[1])
+    end
+    check(#Core.parseIndex{ format = 1, plugins = { with("url", "https://example.org:8443/p/a-1.tar.gz?x=1&y=%2F") } } == 1,
+        "https url with port and query accepted")
+end
+
+-- The host setting holds a manifest URL, or a folder from earlier versions.
+do
+    local default = Core.DEFAULT_INDEX
+    local url, base = Core.indexLocation(nil)
+    check(url == default and base == "https://raw.githubusercontent.com/luutuankiet/koreader-ppw3/main/registry/",
+        "no setting reads the GitHub manifest: " .. url .. " " .. base)
+    url, base = Core.indexLocation("http://192.168.1.19:9999/pkg/")
+    check(url == "http://192.168.1.19:9999/pkg/index.json" and base == "http://192.168.1.19:9999/pkg/",
+        "saved /pkg/ folder still works")
+    url, base = Core.indexLocation(" http://192.168.1.19:9999/pkg ")
+    check(url == "http://192.168.1.19:9999/pkg/index.json" and base == "http://192.168.1.19:9999/pkg/",
+        "folder without trailing slash: " .. url)
+    url, base = Core.indexLocation("https://example.org/reg/index.json")
+    check(url == "https://example.org/reg/index.json" and base == "https://example.org/reg/", "manifest URL kept as is")
+    check(Core.packageUrl({ file = "a-1.tar.gz" }, base) == "https://example.org/reg/a-1.tar.gz", "file is relative to the index")
+    check(Core.packageUrl({ file = "a-1.tar.gz", url = "https://x.org/a.tar.gz" }, base) == "https://x.org/a.tar.gz",
+        "url wins over file")
+end
+
+-- Certificate host names: exact, or one wildcard label.
+do
+    local names = { "*.githubusercontent.com", "github.com" }
+    check(Core.hostMatches(names, "release-assets.githubusercontent.com"), "wildcard matches one label")
+    check(Core.hostMatches(names, "GitHub.com"), "host match ignores case")
+    check(not Core.hostMatches(names, "a.b.githubusercontent.com"), "wildcard does not span labels")
+    check(not Core.hostMatches(names, "githubusercontent.com"), "wildcard needs a label")
+    check(not Core.hostMatches(names, "evilgithub.com"), "no suffix match without a dot")
+    check(not Core.hostMatches({ "*.com" }, "github.com"), "wildcard over a bare top-level domain refused")
+end
+
+-- Installing a url entry: fetched from its url, checked against its sha256.
+do
+    local e, a = buildPackage("demo", "1.0.0")
+    e.url = "https://github.com/o/r/releases/download/demo-v1.0.0/" .. e.file
+    e.file = nil
+    check(#Core.parseIndex{ format = 1, plugins = { e } } == 1, "built url entry passes parseIndex")
+    local root = freshRoot()
+    local fetched
+    local new_dir, err = Core.prepare(e, { root = root, url = Core.packageUrl(e, "http://unused/"),
+        fetch = function(url, path) fetched = url; return copyTo(a)(url, path) end })
+    check(new_dir ~= nil, "url entry prepared: " .. tostring(err))
+    check(fetched == e.url, "downloaded from the entry's url: " .. tostring(fetched))
+    check(new_dir and Core.swapIn(root, "demo", new_dir), "url entry swapped in")
+    check(Core.readVersion(root .. "/demo.koplugin") == "1.0.0", "url entry installed")
+
+    local bad = {}
+    for k, v in pairs(e) do bad[k] = v end
+    bad.sha256 = string.rep("0", 64)
+    root = freshRoot()
+    new_dir, err = Core.prepare(bad, { root = root, url = bad.url, fetch = copyTo(a) })
+    check(not new_dir and err == "checksum mismatch", "url entry with wrong sha256 refused: " .. tostring(err))
+    check(not exists(root .. "/demo.koplugin"), "nothing installed after a checksum mismatch")
+end
+
 check(Core.compareVersions("0.10.0", "0.9.1") > 0, "numeric version compare")
 check(Core.compareVersions("1.0", "1.0.0") == 0, "missing parts count as zero")
 check(Core.compareVersions("0.4.0", "0.4.1") < 0, "older version sorts lower")

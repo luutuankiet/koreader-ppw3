@@ -13,12 +13,14 @@ Workspace for developing KOReader plugins for Kindle Paperwhite 3 devices, plus 
 ## Layout
 
 - `koreader_mcp.koplugin/` - agent bridge inside KOReader, dialling out to the gateway during a live session (`handlers.lua` tools, `live.lua` session and connection, `main.lua` entry and menu, `server.lua` JSON codec, `ui_agent.lua` widget snapshot and actions, tests with `luajit test_ui_agent.lua` and `luajit test_live.lua`)
-- `kindle-gateway/` - Node/TypeScript MCP relay (`src/gateway-server.ts` tools, `src/device-link.ts` device connections, `src/device-registry.ts` in-memory registry of connected devices, `src/ui-snapshot.ts` snapshot formatting and stale references)
+- `kindle-gateway/` - Node/TypeScript MCP relay, now the LAN fallback on the home server (`src/gateway-server.ts` tools, `src/device-link.ts` device connections, `src/device-registry.ts` in-memory registry of connected devices, `src/ui-snapshot.ts` snapshot formatting and stale references)
+- `kindle-gateway-worker/` - the gateway on Cloudflare: a Worker in front of one Durable Object (`src/hub.ts`) that holds every device's WebSocket and serves stateless MCP on `/mcp` behind `AGENT_KEY` (`src/mcp.ts` tool groups, `src/tools/` tools, `src/screenshot.ts` photon JPEG encode, `src/inbox.ts` diagnostics upload to R2 on `PUT /inbox/<device>/<file>` behind `DEVICE_KEY`, `src/diagnostics-tools.ts` list and read diagnostics); `npm test` (vitest in workerd), `npx tsc --noEmit`, `scripts/fake-device.mjs` plus `scripts/mcp-client.mjs` against `npx wrangler dev`
 - `rssreader.koplugin/` - FreshRSS reader plugin (separate repo)
 - `syncedhistory.koplugin/` - synced reading list plugin (map: `docs/architecture/synced-reading-list.md`; each module has a `test_*.lua`, run with `luajit test_<name>.lua`, or `--koreader` from a KOReader install folder for the real md5 and lfs)
 - `pluginpackages.koplugin/` - on-device plugin installer with rollback and self-update (map: `docs/architecture/plugin-installer.md`; `pluginpackages_core.lua` does the disk work, tests with `luajit test_core.lua`)
 - `emulator/` - KOReader `v2026.07.1` in Docker, permanently connected to the gateway as device `emu` (`emulator/README.md`); its `state/` and `library/` are gitignored
-- `scripts/` - shell deploy fallbacks, `publish.sh` (plugin packages the gateway serves at `/pkg/`) and the docs index generator
+- `scripts/` - shell deploy fallbacks, `publish.sh` (plugin packages: `--github` publishes a GitHub Release and its entry in `registry/index.json`, otherwise the LAN gateway's `/pkg/`) and the docs index generator
+- `registry/index.json` - the plugin manifest the on-device installer reads from `main` by default
 - `kosettings_backup/` - gitignored device settings backup
 
 ## Build and check
@@ -27,6 +29,10 @@ Workspace for developing KOReader plugins for Kindle Paperwhite 3 devices, plus 
 - `cd kindle-gateway && npm test` - jest suite (registry, client, end to end against a fake Kindle)
 - `cd kindle-gateway && docker compose build && docker compose up -d` - rebuild the gateway
 - Configuration: copy `kindle-gateway/.env.example` to `kindle-gateway/.env` (gitignored).
+- `cd kindle-gateway-worker && npx tsc --noEmit` - typecheck the Worker
+- `cd kindle-gateway-worker && npx vitest run` - vitest suite inside workerd (hub, MCP tools, inbox)
+- `cd kindle-gateway-worker && npx wrangler dev` - local Worker on `http://127.0.0.1:8787`; keys from `.dev.vars` (copy `.dev.vars.example`, gitignored); drive it with `scripts/fake-device.mjs` and `scripts/mcp-client.mjs`
+- `cd kindle-gateway-worker && npx wrangler deploy` - deploy to `https://kindle.kenluu.org`, with `CLOUDFLARE_API_TOKEN` (the `cf` CLI's OAuth token works) and `CLOUDFLARE_ACCOUNT_ID` in the environment, never in a file; keys with `npx wrangler secret put AGENT_KEY` and `DEVICE_KEY`
 
 <!-- Standard block. Everything above belongs to this project; everything below is
      the pointer every repo laid out this way carries. -->

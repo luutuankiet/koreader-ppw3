@@ -1,0 +1,55 @@
+Tue Nov  3 04:19:05 PM UTC 2026
+[
+  {
+    "name": "emu",
+    "status": "online",
+    "idHash": "e34511414d6a",
+    "koreaderVersion": "v2026.07.1",
+    "pluginVersions": {
+      "syncedhistory": "0.2.0",
+      "pluginpackages": "0.1.0",
+      "koreader_mcp": "0.3.1",
+      "kosyncserverless": "0.2.0"
+    },
+    "remoteAddress": "127.0.0.1",
+    "connectedAt": "2026-11-03T15:57:29.743Z",
+    "lastMessageAt": "2026-11-03T16:19:00.818Z"
+  }
+]
+{
+  "widgets": [
+    {
+      "name": "ScreenSaver",
+      "dimen": {
+        "w": 828,
+        "h": 139,
+        "x": 0,
+        "y": 0
+      },
+      "type": "widget"
+    },
+    {
+      "dimen": {
+        "w": 1072,
+        "h": 1448,
+        "x": 0,
+        "y": 0
+      },
+      "name": "unknown",
+      "title": "KOReader",
+      "type": "dialog"
+    }
+  ],
+  "top_widget": {
+    "name": "ScreenSaver",
+    "dimen": {
+      "w": 828,
+      "h": 139,
+      "x": 0,
+      "y": 0
+    },
+    "type": "widget"
+  },
+  "widget_count": 2
+}
+[image]

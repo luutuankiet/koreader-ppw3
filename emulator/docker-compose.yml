@@ -14,6 +14,10 @@ services:
       MCP_DEVICE_NAME: "emu"
       MCP_GATEWAY_HOST: "127.0.0.1"
       MCP_GATEWAY_DEVICE_PORT: "9990"
+      # WebSocket gateway instead of raw TCP: a ws:// or wss:// URL and the device key.
+      # Unset or empty keeps raw TCP to MCP_GATEWAY_HOST:MCP_GATEWAY_DEVICE_PORT.
+      # MCP_GATEWAY_URL: "ws://127.0.0.1:8787/device"
+      # MCP_GATEWAY_KEY: "<device key>"
     volumes:
       # Gitignored. KO_HOME: settings.reader.lua, settings/kosync.lua, history, cache.
       - ./state/koreader-home:/mnt/us/koreader-home

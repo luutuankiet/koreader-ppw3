@@ -29,7 +29,8 @@ local T = ffiutil.template
 -- this code keeps running, and package.path only holds it during plugin load.
 local Core = require("pluginpackages_core")
 
-local DEFAULT_HOST = "http://192.168.1.19:9999/pkg/"
+-- Either a manifest URL ending in .json or, as saved by earlier versions, a
+-- folder holding index.json; Core.indexLocation tells them apart.
 local SETTING_HOST = "pluginpackages_host"
 
 local PluginPackages = WidgetContainer:extend{
@@ -49,33 +50,11 @@ function PluginPackages:addToMainMenu(menu_items)
 end
 
 function PluginPackages:host()
-    local host = G_reader_settings:readSetting(SETTING_HOST) or DEFAULT_HOST
-    if host:sub(-1) ~= "/" then host = host .. "/" end
-    return host
+    return G_reader_settings:readSetting(SETTING_HOST) or Core.DEFAULT_INDEX
 end
 
 function PluginPackages:root()
     return self.path:match("^(.*)/[^/]+$")
-end
-
--- One HTTP GET to a file, or to a string when path is nil. Runs in the subprocess.
-local function httpGet(url, path)
-    local http = require("socket.http")
-    local socket = require("socket")
-    local socketutil = require("socketutil")
-    local chunks = {}
-    local sink
-    if path then
-        socketutil:set_timeout(socketutil.FILE_BLOCK_TIMEOUT, socketutil.FILE_TOTAL_TIMEOUT)
-        sink = socketutil.file_sink(io.open(path, "wb"))
-    else
-        socketutil:set_timeout()
-        sink = socketutil.table_sink(chunks)
-    end
-    local code, _, status = socket.skip(1, http.request{ url = url, method = "GET", sink = sink })
-    socketutil:reset_timeout()
-    if code ~= 200 then return nil, tostring(status or code) end
-    return path and true or table.concat(chunks)
 end
 
 function PluginPackages:open()
@@ -85,9 +64,10 @@ function PluginPackages:open()
 end
 
 function PluginPackages:fetchAndShow()
-    local url = self:host() .. "index.json"
+    local url, base = Core.indexLocation(self:host())
+    self.base = base
     local completed, answer = Trapper:dismissableRunInSubprocess(function()
-        local ok, body, err = pcall(httpGet, url)
+        local ok, body, err = pcall(Core.httpGet, url)
         if ok and body then return "OK\n" .. body end
         return "ER\n" .. tostring(ok and err or body)
     end, _("Fetching package list…"), true)
@@ -178,6 +158,7 @@ function PluginPackages:editHost()
     local dialog
     dialog = InputDialog:new{
         title = _("Package host"),
+        description = _("Leave empty to use the GitHub registry."),
         input = self:host(),
         buttons = {{
             {
@@ -191,11 +172,14 @@ function PluginPackages:editHost()
                 callback = function()
                     local value = util.trim(dialog:getInputText())
                     UIManager:close(dialog)
-                    if value ~= "" then
+                    -- An empty host goes back to the GitHub registry (Core.DEFAULT_INDEX).
+                    if value == "" or value == Core.DEFAULT_INDEX then
+                        G_reader_settings:delSetting(SETTING_HOST)
+                    else
                         G_reader_settings:saveSetting(SETTING_HOST, value)
-                        -- Otherwise on disk only at a clean exit: a crash forgets the host.
-                        G_reader_settings:flush()
                     end
+                    -- Otherwise on disk only at a clean exit: a crash forgets the host.
+                    G_reader_settings:flush()
                     self:open()
                 end,
             },
@@ -218,7 +202,7 @@ function PluginPackages:showActions(entry, plugins)
     local bak_version = Core.readVersion(root .. "/" .. entry.name .. ".koplugin.bak")
     local buttons = {}
     local dialog
-    if entry.file then
+    if entry.sha256 then -- from the index, not a backup-only row
         local label
         if not installed then
             label = T(_("Install %1"), entry.version)
@@ -276,9 +260,9 @@ end
 
 function PluginPackages:install(entry)
     local root = self:root()
-    local url = self:host() .. entry.file
+    local url = Core.packageUrl(entry, self.base)
     local completed, answer = Trapper:dismissableRunInSubprocess(function()
-        local ok, new_dir, err = pcall(Core.prepare, entry, { root = root, url = url, fetch = httpGet })
+        local ok, new_dir, err = pcall(Core.prepare, entry, { root = root, url = url, fetch = Core.httpGet })
         if ok and new_dir then return "OK\n" .. new_dir end
         return "ER\n" .. tostring(ok and err or new_dir)
     end, T(_("Installing %1…"), entry.fullname or entry.name), true)

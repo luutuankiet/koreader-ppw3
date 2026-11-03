@@ -1,0 +1,259 @@
+{
+ "data": {
+  "viewer": {
+   "accounts": [
+    {
+     "d": [
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:18:00Z"
+       },
+       "sum": {
+        "requests": 2
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:21:00Z"
+       },
+       "sum": {
+        "requests": 2
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:22:00Z"
+       },
+       "sum": {
+        "requests": 18
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:23:00Z"
+       },
+       "sum": {
+        "requests": 27
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:26:00Z"
+       },
+       "sum": {
+        "requests": 1
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:31:00Z"
+       },
+       "sum": {
+        "requests": 1
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:36:00Z"
+       },
+       "sum": {
+        "requests": 1
+       }
+      }
+     ],
+     "p": [
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:21:00Z"
+       },
+       "sum": {
+        "activeTime": 29785,
+        "duration": 0.00381248,
+        "inboundWebsocketMsgCount": 0
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:22:00Z"
+       },
+       "sum": {
+        "activeTime": 25459321,
+        "duration": 3.258793088,
+        "inboundWebsocketMsgCount": 0
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:23:00Z"
+       },
+       "sum": {
+        "activeTime": 10641898,
+        "duration": 1.362162944,
+        "inboundWebsocketMsgCount": 0
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:26:00Z"
+       },
+       "sum": {
+        "activeTime": 13586,
+        "duration": 0.001739008,
+        "inboundWebsocketMsgCount": 0
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:31:00Z"
+       },
+       "sum": {
+        "activeTime": 12248,
+        "duration": 0.001567744,
+        "inboundWebsocketMsgCount": 0
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:36:00Z"
+       },
+       "sum": {
+        "activeTime": 11994,
+        "duration": 0.001535232,
+        "inboundWebsocketMsgCount": 0
+       }
+      }
+     ],
+     "w": [
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:18:00Z",
+        "status": "success"
+       },
+       "sum": {
+        "requests": 7
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:19:00Z",
+        "status": "success"
+       },
+       "sum": {
+        "requests": 7
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:21:00Z",
+        "status": "clientDisconnected"
+       },
+       "sum": {
+        "requests": 1
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:21:00Z",
+        "status": "success"
+       },
+       "sum": {
+        "requests": 1
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:22:00Z",
+        "status": "success"
+       },
+       "sum": {
+        "requests": 12
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:23:00Z",
+        "status": "success"
+       },
+       "sum": {
+        "requests": 16
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:24:00Z",
+        "status": "success"
+       },
+       "sum": {
+        "requests": 2
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:25:00Z",
+        "status": "success"
+       },
+       "sum": {
+        "requests": 2
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:28:00Z",
+        "status": "success"
+       },
+       "sum": {
+        "requests": 5
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:29:00Z",
+        "status": "success"
+       },
+       "sum": {
+        "requests": 6
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:30:00Z",
+        "status": "success"
+       },
+       "sum": {
+        "requests": 1
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:32:00Z",
+        "status": "success"
+       },
+       "sum": {
+        "requests": 2
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:33:00Z",
+        "status": "success"
+       },
+       "sum": {
+        "requests": 1
+       }
+      },
+      {
+       "dimensions": {
+        "datetimeMinute": "2026-11-03T16:40:00Z",
+        "status": "success"
+       },
+       "sum": {
+        "requests": 2
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ "errors": null
+}

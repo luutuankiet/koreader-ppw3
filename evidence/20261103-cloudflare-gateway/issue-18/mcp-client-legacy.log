@@ -1,0 +1,89 @@
+2026-11-03T16:00:54.282Z protocol 2025-11-25
+2026-11-03T16:00:54.304Z tools (18): action close_top_widget device_status get_current_view get_menu_items go_back hold list_devices read_files restart_koreader run_command screenshot select_menu_item send_event snapshot tap tap_text type
+2026-11-03T16:00:54.320Z list_devices {} -> 15 ms
+[
+  {
+    "name": "fake-kindle",
+    "status": "online",
+    "idHash": "feedfacecafebeef",
+    "koreaderVersion": "fake",
+    "pluginVersions": {
+      "koreader_mcp": "fake"
+    },
+    "remoteAddress": "127.0.0.1",
+    "connectedAt": "2026-11-03T16:00:53.930Z",
+    "lastMessageAt": "2026-11-03T16:00:53.972Z"
+  }
+]
+2026-11-03T16:00:54.332Z device_status {"device":"fake-kindle"} -> 12 ms
+{
+  "name": "fake-kindle",
+  "battery": 80,
+  "fake": true
+}
+2026-11-03T16:00:54.345Z snapshot {"device":"fake-kindle"} -> 13 ms
+snapshot 2 · window FileManager · 2 widgets
+[2_1] item "Synced reading list"
+[2_2] button "Close"
+2026-11-03T16:00:54.358Z tap {"device":"fake-kindle","ref":"2_1"} -> 12 ms
+tap ok
+
+snapshot 3 · window FileManager · 2 widgets
+[3_1] item "Synced reading list"
+[3_2] button "Close"
+
+logs (1):
+  fake: acted
+2026-11-03T16:00:54.371Z device_status {"device":"fake-kindle"} -> 13 ms
+{
+  "name": "fake-kindle",
+  "battery": 80,
+  "fake": true
+}
+2026-11-03T16:00:54.490Z screenshot {"device":"fake-kindle"} -> 119 ms
+{
+  "device": "fake-kindle",
+  "size_bytes": 70696
+}
+[image image/jpeg 30732 base64 chars]
+2026-11-03T16:00:54.490Z screenshot 1: image/jpeg, 23049 bytes, 119 ms wall (device_status round trip 13 ms)
+2026-11-03T16:00:54.617Z screenshot {"device":"fake-kindle"} -> 127 ms
+{
+  "device": "fake-kindle",
+  "size_bytes": 70696
+}
+[image image/jpeg 30732 base64 chars]
+2026-11-03T16:00:54.618Z screenshot 2: image/jpeg, 23049 bytes, 127 ms wall (device_status round trip 13 ms)
+2026-11-03T16:00:54.738Z screenshot {"device":"fake-kindle"} -> 121 ms
+{
+  "device": "fake-kindle",
+  "size_bytes": 70696
+}
+[image image/jpeg 30732 base64 chars]
+2026-11-03T16:00:54.739Z screenshot 3: image/jpeg, 23049 bytes, 121 ms wall (device_status round trip 13 ms)
+2026-11-03T16:00:56.799Z restart_koreader {"device":"fake-kindle"} -> 2060 ms
+{
+  "device": "fake-kindle",
+  "restarted": true,
+  "status": "online"
+}
+2026-11-03T16:00:56.823Z list_devices {} -> 23 ms
+[
+  {
+    "name": "fake-kindle",
+    "status": "online",
+    "idHash": "feedfacecafebeef",
+    "koreaderVersion": "fake",
+    "pluginVersions": {
+      "koreader_mcp": "fake"
+    },
+    "remoteAddress": "127.0.0.1",
+    "connectedAt": "2026-11-03T16:00:56.783Z",
+    "lastMessageAt": "2026-11-03T16:00:56.782Z"
+  }
+]
+2026-11-03T16:00:56.837Z snapshot {"device":"fake-kindle"} -> 14 ms
+snapshot 1 · window FileManager · 2 widgets
+[1_1] item "Synced reading list"
+[1_2] button "Close"
+2026-11-03T16:00:56.843Z done

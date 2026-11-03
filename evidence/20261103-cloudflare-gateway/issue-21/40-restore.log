@@ -1,0 +1,17 @@
+Tue Nov  3 04:41:45 PM UTC 2026
+[]
+    PID                  STARTED COMMAND
+   1744 Tue Nov  3 16:23:09 2026 luajit
+ls: cannot access '/mnt/us/koreader-home/settings/koreader_mcp.lua': No such file or directory
+restarted at 2026-11-03T16:41:45Z
+    PID                  STARTED COMMAND
+   1744 Tue Nov  3 16:23:09 2026 luajit
+ls: cannot access '/mnt/us/koreader-home/settings/koreader_mcp.lua': No such file or directory
+2026-11-03T16:38:10.640283391Z 11/03/26-16:38:10 INFO  Inhibiting user input 
+Tue Nov  3 04:42:32 PM UTC 2026
+kill -9 1744 rc=0
+2026-11-03T16:42:32.749697094Z /usr/local/bin/supervisor.sh: line 81:  1744 Killed                  ./luajit ./reader.lua
+2026-11-03T16:42:32.751191739Z [supervisor] 2026-11-03 16:42:32 KOReader exited with code 137; relaunching in 2 s
+2026-11-03T16:42:34.759351113Z [supervisor] 2026-11-03 16:42:34 starting KOReader (launch 9)
+2026-11-03T16:42:35.167864551Z 11/03/26-16:42:35 INFO  [MCP] live mode gateway: 127.0.0.1:9990 
+2026-11-03T16:42:35.369547866Z 11/03/26-16:42:35 INFO  [MCP] live mode online as emu 

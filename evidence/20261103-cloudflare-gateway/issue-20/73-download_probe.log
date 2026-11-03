@@ -1,0 +1,40 @@
+has monolibtic? no (libs/libkoreader-monolibtic.so: cannot open shared object file: No such file or directory)
+lib_search_path: libs/?
+lib_basic_format: lib%s.so
+lib_version_format: lib%s.so.%s
+ffi.load: rt.so.1 (RTLD_GLOBAL)
+ffi.findlib: utf8proc [3]
+ffi.load: libs/libutf8proc.so.3
+CA file: data/ca-bundle.crt exists=true
+GET https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_checksums.txt
+ffi.findlib: SDL3 [0]
+ffi.load: libs/libSDL3.so.0
+ffi.findlib: blitbuffer
+ffi.load: libs/libblitbuffer.so
+Started SDL in /mnt/us/koreader/ using x11 video driver
+ffi.findlib: lodepng
+ffi.load: libs/liblodepng.so
+11/03/26-15:35:13 INFO  initializing for device Emulator 
+11/03/26-15:35:13 INFO  framebuffer resolution: {
+  h = 1448,
+  w = 1072
+} --[[table: 0x735a1d6d7a60]] 
+  tls name check: github.com -> true
+  tls name check: release-assets.githubusercontent.com -> true
+  result=true err=nil size=1971 sha256=f756e7859d90dbb5e85aae5194206c37da220bec9bac23d3d659078a8e766fdc seconds=2
+PASS asset 1 downloaded, size and sha256 match
+GET https://github.com/koreader/koreader/releases/download/v2026.07.1/koreader_2026.07.1-1_armhf.deb
+  tls name check: github.com -> true
+  tls name check: release-assets.githubusercontent.com -> true
+  result=true err=nil size=28469960 sha256=4e9326f6c99c0df7fb0380645a0b96b8ec030095d021393f1c6983803211b6bc seconds=3
+PASS asset 2 downloaded, size and sha256 match
+  tls name check: raw.githubusercontent.com -> true
+PASS string GET from raw.githubusercontent.com: 6334
+PASS refused https://self-signed.badssl.com/: certificate verify failed
+PASS refused https://untrusted-root.badssl.com/: certificate verify failed
+PASS refused https://expired.badssl.com/: certificate verify failed
+  tls name check: wrong.host.badssl.com -> false
+PASS refused https://wrong.host.badssl.com/: certificate is not for wrong.host.badssl.com
+  tls name check: badssl.com -> true
+PASS accepted https://badssl.com/: 11673
+ALL PASS
