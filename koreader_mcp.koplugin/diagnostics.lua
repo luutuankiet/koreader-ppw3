@@ -267,21 +267,24 @@ function M.commit(built, offset_path)
 end
 
 --- PUT the bundle; returns true or nil, err. The caller makes sure WiFi is up.
-function M.upload(gateway_url, device, built, stamp)
+--- bearer, when set, is the device key the gateway asks for.
+function M.upload(gateway_url, device, built, stamp, bearer)
     local http = require("socket.http")
     local ltn12 = require("ltn12")
     local file, err = io.open(built.path, "rb")
     if not file then return nil, tostring(err) end
     local old_timeout = http.TIMEOUT
     http.TIMEOUT = UPLOAD_TIMEOUT_S
+    local headers = {
+        ["Content-Type"] = "application/gzip",
+        ["Content-Length"] = tostring(built.size),
+    }
+    if bearer and bearer ~= "" then headers["Authorization"] = "Bearer " .. bearer end
     -- ltn12.source.file closes the file.
     local result, code = http.request({
         url = gateway_url .. "/inbox/" .. device .. "/" .. stamp .. ".tar.gz",
         method = "PUT",
-        headers = {
-            ["Content-Type"] = "application/gzip",
-            ["Content-Length"] = tostring(built.size),
-        },
+        headers = headers,
         source = ltn12.source.file(file),
         sink = ltn12.sink.null(),
     })

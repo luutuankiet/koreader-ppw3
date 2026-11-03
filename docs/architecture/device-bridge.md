@@ -1,12 +1,12 @@
 ---
 title: Device bridge (agent to Kindle)
-covers: how an agent call reaches a Kindle, which file owns the gateway tools, the stateless MCP transport, the dial-out connection and live sessions, screenshots and running on Android
+covers: how an agent call reaches a Kindle, which file owns the gateway tools, the stateless MCP transport, the dial-out connection (raw TCP or WebSocket with a device key) and live sessions, screenshots and running on Android
 verified: 2026-11-03
 ---
 
 # Device bridge
 
-An agent talks MCP to `kindle-gateway` (Node, port 9999 by default). `koreader_mcp` (Lua, inside KOReader) dials out to the gateway's `DEVICE_PORT` (9990 by default) during a live session and keeps that one connection open; tool calls and replies travel over it. A device is in `list_devices` exactly while its connection is open, and the gateway keeps the list in memory only. Devices listen on nothing.
+An agent talks MCP to `kindle-gateway` (Node, port 9999 by default). `koreader_mcp` (Lua, inside KOReader) dials out to the gateway's `DEVICE_PORT` (9990 by default), or to a WebSocket gateway URL, during a live session and keeps that one connection open; tool calls and replies travel over it. A device is in `list_devices` exactly while its connection is open, and the gateway keeps the list in memory only. Devices listen on nothing.
 
 ```mermaid
 flowchart LR
@@ -18,7 +18,12 @@ flowchart LR
 
 ## The connection
 
-Newline-delimited JSON. The device sends a hello (`name`, `id_hash`, versions); the gateway answers `welcome` or `refused`. Then the gateway sends JSON-RPC calls and the device replies by id, in any order. The device pings every 60 s and the gateway pongs; either side treats 150 s of silence as a drop.
+Two transports carry the same JSON messages. Given `host:port`, the device dials raw TCP and sends newline-delimited JSON. Given a `ws://` or `wss://` URL, it opens a WebSocket (`ws.lua`, RFC 6455, no native library) with `Authorization: Bearer <device key>` on the handshake and sends one message per text frame; `wss://` goes through LuaSec with the peer certificate checked against `data/ca-bundle.crt` and the host name (SAN, else CN). `live.lua` sees no difference: the WebSocket connection offers the same `receive("*l")` and `send` as a luasocket.
+
+The device sends a hello (`name`, `id_hash`, versions); the gateway answers `welcome` or `refused`. Then the gateway sends JSON-RPC calls and the device replies by id, in any order. The device pings every 60 s with the fixed text `{"type":"ping"}` and the gateway answers `{"type":"pong"}`; the body never varies, so a WebSocket gateway can answer it without waking up. Either side treats 150 s of silence as a drop. A WebSocket control ping is answered with a control pong; a close frame drops the connection.
+
+- Where the device dials: `gateway_url` and `gateway_key` in `<settings>/koreader_mcp.lua` (set from the menu: Agent bridge, Gateway address, which takes `host:port` or a URL, and Device key), else `gateway_url` and `gateway_key` in the plugin's `config.lua` (the emulator writes these from `MCP_GATEWAY_URL` and `MCP_GATEWAY_KEY`), else `host:port` from the same places. A host and port saved from the menu beat a URL in `config.lua`. With a WebSocket gateway, Send diagnostics goes to the gateway's own http(s) origin and carries the same bearer key.
+- A WebSocket handshake answered 401 or 403 means the key was turned down: a Kindle session ends, and `always` mode logs `live mode rejected` and waits 300 s (`Live.REJECTED_DELAY`) before trying again, never the short retry delays, so a wrong key cannot hammer the gateway.
 
 - A name is refused only while a different `id_hash` holds it on an open connection. The same hash replaces the old connection, which covers a reconnect the gateway has not noticed yet.
 - `id_hash` is the first 12 hex digits of a SHA-256 of the serial; the serial itself never leaves the device, only its last 4 characters in the default name `pw3-XXXX`.
@@ -40,10 +45,11 @@ Line numbers below are a starting point, not an address: jump roughly there, con
 | `kindle-gateway/src/device-link.ts` | whole file | one device connection: framing, reply routing, ping, silence timer, hello; `startDeviceListener` |
 | `kindle-gateway/src/device-registry.ts` | whole file | connected devices, in memory; `attach`, `waitForConnection` |
 | `koreader_mcp.koplugin/handlers.lua` | whole file | one `handlers.<tool>` per tool, `dispatch` at the end |
+| `koreader_mcp.koplugin/ws.lua` | whole file | WebSocket client: URL parsing, frame encode and decode, masking, handshake (401/403 is `rejected`), a connection that looks like a luasocket; tested by `test_live.lua` |
 | `koreader_mcp.koplugin/live.lua` | whole file | session state machine, with everything device-specific injected, tested by `test_live.lua` on plain luajit |
-| `koreader_mcp.koplugin/main.lua` | 65-174 | what `live.lua` is given: identity, connect, screen saver, WiFi check |
-| same | 198-228, 295-395 | plugin init, resume, menu |
-| same | 229-294 | Send diagnostics: inbox address, manifest info, build and upload |
+| `koreader_mcp.koplugin/main.lua` | 67-268 | what `live.lua` is given: identity, raw TCP `connect`, `connectWebSocket` and `certMatchesHost`, screen saver, WiFi check, `gatewayTarget` (which setting wins) |
+| same | 269-324, 393-526 | plugin init, resume, menu, Gateway address and Device key dialogs |
+| same | 325-392 | Send diagnostics: inbox address, manifest info, build and upload |
 | `koreader_mcp.koplugin/diagnostics.lua` | whole file | bundle build, redaction, log offset, upload; tested by `test_diagnostics.lua` |
 | `koreader_mcp.koplugin/server.lua` | whole file | supplies the JSON codec; its HTTP listener is no longer started |
 
