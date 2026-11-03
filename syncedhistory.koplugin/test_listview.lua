@@ -9,12 +9,16 @@ Two ways to run it:
        luajit test_listview.lua
 
   2. With KOReader's own luajit: also checks, against the installed KOReader,
-     that the built-in progress sync's pull action and the Menu, UIManager and
+     that the progress sync plugin's pull action and the Menu, UIManager and
      filemanagerutil calls main.lua uses are there and behave as main.lua
      expects. Run from the KOReader install folder (the one holding
      setupkoenv.lua):
        cd /mnt/us/koreader          # Kindle and emulator
        ./luajit plugins/syncedhistory.koplugin/test_listview.lua --koreader
+     The progress sync checks follow the plugin the setting picks
+     (syncedhistory_backend.lua): SYNCEDHISTORY_BACKEND=auto (default),
+     kosync or serverless. Its main.lua is looked for in plugins/ and next
+     to this plugin's folder.
 ]]
 
 local mode = arg and arg[1] == "--koreader" and "koreader" or "standalone"
@@ -411,21 +415,37 @@ if mode == "koreader" then
         local stop = src:find("\nend\n", start, true)
         return src:sub(start, stop)
     end
-    local kosync = readFile("plugins/kosync.koplugin/main.lua")
+    local Backend = require("syncedhistory_backend")
+    local function exists(path)
+        local fh = io.open(path, "r")
+        if fh then fh:close() return true end
+        return false
+    end
+    local backend, source = Backend.fromSources(os.getenv("SYNCEDHISTORY_BACKEND"),
+        { "plugins", this_dir .. "/.." }, exists, print)
+    print("progress sync backend: " .. backend.id .. ", source: " .. tostring(source))
+    local kosync = readFile(assert(source, backend.plugin_dir .. "/main.lua not found"))
+    local cls = backend.class
 
-    test("koreader: KOSyncPullProgress calls getProgress(true, true)", function()
-        local body = functionBody(kosync, "KOSync:onKOSyncPullProgress")
+    test("koreader: " .. backend.pull_event .. " calls getProgress(true, true)", function()
+        local body = functionBody(kosync, cls .. ":on" .. backend.pull_event)
         check(body:find("self:getProgress%(true, true%)"), "pull action body changed:\n" .. body)
     end)
 
-    -- main.lua's readKosyncSettings reads one of these two places.
-    test("koreader: kosync keeps its settings in kosync.lua or the reader settings", function()
-        check(kosync:find('"/kosync.lua"', 1, true) or kosync:find('G_reader_settings:readSetting("kosync"', 1, true),
-            "kosync settings moved")
+    -- main.lua's readKosyncSettings reads one of these places.
+    test("koreader: " .. backend.module .. " keeps its settings in " .. backend.settings_file
+        .. " under the key settings", function()
+        local in_file = kosync:find('"/' .. backend.settings_file .. '"', 1, true)
+        local legacy = backend.legacy_key
+            and kosync:find('G_reader_settings:readSetting("' .. backend.legacy_key .. '"', 1, true)
+        check(in_file or legacy, backend.module .. " settings moved")
+        check(kosync:find('readSetting("settings"', 1, true), "settings no longer under the key settings")
+        check(kosync:find('name = "' .. backend.module .. '"', 1, true), "plugin name is not " .. backend.module)
+        check(kosync:find("is_doc_only = true", 1, true), "no longer doc-only: main.lua's hasPlugin relies on it")
     end)
 
     test("koreader: an interactive pull jumps without a prompt", function()
-        local body = functionBody(kosync, "KOSync:getProgress")
+        local body = functionBody(kosync, cls .. ":getProgress")
         local branch = body:match("if interactive then%s*\n%s*%-%-[^\n]*\n%s*%-%-[^\n]*\n%s*self:syncToProgress%(body%.progress%)")
         check(branch, "interactive branch no longer calls syncToProgress first")
         check(body:find("NetworkMgr:willRerunWhenOnline", 1, true), "pull no longer turns the network on")
@@ -493,8 +513,20 @@ if mode == "koreader" then
             check(readFile("frontend/apps/filemanager/filemanager.lua"):find("function FileManager:openFile(file", 1, true),
                 "FileManager:openFile")
         end
-        local ev = require("ui/event"):new("KOSyncPullProgress")
-        eq(ev.handler, "onKOSyncPullProgress", "event handler name")
+        local Event = require("ui/event")
+        eq(Event:new("KOSyncPullProgress").handler, "onKOSyncPullProgress", "event handler name")
+        eq(Event:new("KOSyncServerlessPullProgress").handler, "onKOSyncServerlessPullProgress",
+            "serverless event handler name")
+    end)
+
+    -- main.lua's hasPlugin: with no book open, a doc-only plugin has no
+    -- ui.<name>, but PluginLoader keeps it in enabled_plugins under its name.
+    test("koreader: PluginLoader lists enabled plugins by name", function()
+        local src = readFile("frontend/pluginloader.lua")
+        check(src:find("table.insert(self.enabled_plugins, plugin_module)", 1, true), "enabled_plugins")
+        check(src:find("plugin_module.name = v.name", 1, true), "plugin name")
+        check(src:find("if self.enabled_plugins then return self.enabled_plugins", 1, true),
+            "loadPlugins no longer keeps enabled_plugins")
     end)
 end
 
