@@ -124,8 +124,8 @@ describe('Worker routing and auth', () => {
   });
 
   it('answers 404 for anything else', async () => {
-    expect((await SELF.fetch('https://gw.test/mcp', { method: 'POST' })).status).toBe(404);
     expect((await SELF.fetch('https://gw.test/')).status).toBe(404);
+    expect((await SELF.fetch('https://gw.test/debug/devices')).status).toBe(404);
   });
 
   it('rejects /device without a key', async () => {
@@ -152,12 +152,6 @@ describe('Worker routing and auth', () => {
   it('wants a WebSocket upgrade on /device', async () => {
     const res = await SELF.fetch('https://gw.test/device', { headers: { Authorization: `Bearer ${DEVICE_KEY}` } });
     expect(res.status).toBe(426);
-  });
-
-  it('guards the debug routes with the agent key', async () => {
-    expect((await SELF.fetch('https://gw.test/debug/devices')).status).toBe(401);
-    const res = await SELF.fetch('https://gw.test/debug/devices', { headers: { Authorization: `Bearer ${AGENT_KEY}` } });
-    expect(res.status).toBe(200);
   });
 });
 
@@ -228,16 +222,6 @@ describe('calls', () => {
     await dev.next(); // the call arrived
     dev.close();
     expect((await pending).message).toMatch(/^device disconnected/);
-  });
-
-  it('reaches a device through /debug/call', async () => {
-    await online('kindle-dbg');
-    const res = await SELF.fetch('https://gw.test/debug/call', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${AGENT_KEY}` },
-      body: JSON.stringify({ device: 'kindle-dbg', method: 'echo', params: { y: 2 } }),
-    });
-    expect(await res.json()).toMatchObject({ result: { echoed: { y: 2 } } });
   });
 });
 

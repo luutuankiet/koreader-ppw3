@@ -1,5 +1,3 @@
 # Copy to .dev.vars (gitignored) for `npx wrangler dev`. In production these are Worker secrets.
 DEVICE_KEY=replace-with-a-long-random-device-key
 AGENT_KEY=replace-with-a-long-random-agent-key
-# "1" turns on /debug/devices and /debug/call (agent key required). Leave unset in production.
-ENABLE_DEBUG_ROUTES=1

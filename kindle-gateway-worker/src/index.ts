@@ -12,9 +12,10 @@ type Handler = (request: Request, env: Env) => Promise<Response>;
 const routes: Record<string, Handler> = {
   'GET /health': async () => new Response('ok'),
   'GET /device': deviceUpgrade,
-  // Test-only routes for driving the hub from outside; off unless ENABLE_DEBUG_ROUTES is "1".
-  'GET /debug/devices': debugRoute(async (_req, env) => Response.json(await hub(env).listDevices())),
-  'POST /debug/call': debugRoute(debugCall),
+  // MCP is stateless: POST carries every exchange; GET and DELETE get the SDK's 405.
+  'POST /mcp': mcp,
+  'GET /mcp': mcp,
+  'DELETE /mcp': mcp,
 };
 
 export default {
@@ -39,23 +40,10 @@ async function deviceUpgrade(request: Request, env: Env): Promise<Response> {
   return hub(env).fetch(request);
 }
 
-function debugRoute(handler: Handler): Handler {
-  return async (request, env) => {
-    if (env.ENABLE_DEBUG_ROUTES !== '1') return new Response('not found', { status: 404 });
-    if (!(await bearerMatches(request.headers.get('Authorization'), env.AGENT_KEY))) {
-      return new Response('unauthorized', { status: 401 });
-    }
-    return handler(request, env);
-  };
-}
-
-/** Body `{device, method, params?, timeoutMs?}`; answers the device's reply or `{error}`. */
-async function debugCall(request: Request, env: Env): Promise<Response> {
-  const body = (await request.json()) as { device: string; method: string; params?: Record<string, unknown>; timeoutMs?: number };
-  try {
-    const reply = await hub(env).call(body.device, body.method, body.params, body.timeoutMs);
-    return new Response(JSON.stringify(reply), { headers: { 'Content-Type': 'application/json' } });
-  } catch (err) {
-    return Response.json({ error: (err as Error).message }, { status: 502 });
+/** The agent key is checked here, before any MCP work; the hub does the rest. */
+async function mcp(request: Request, env: Env): Promise<Response> {
+  if (!(await bearerMatches(request.headers.get('Authorization'), env.AGENT_KEY))) {
+    return new Response('unauthorized', { status: 401, headers: { 'WWW-Authenticate': 'Bearer' } });
   }
+  return hub(env).fetch(request);
 }
