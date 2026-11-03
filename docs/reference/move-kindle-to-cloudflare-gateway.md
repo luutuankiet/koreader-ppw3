@@ -1,7 +1,7 @@
 ---
 title: Moving a Kindle to the Cloudflare gateway
 summary: give a Kindle a koreader_mcp that speaks WebSocket, point it at wss://kindle.kenluu.org/device with the device key, install plugins from the GitHub registry, connect an agent, and when the home server's LAN gateway can be retired
-verified: 2026-11-03
+verified: 2026-11-04
 ---
 
 # Moving a Kindle to the Cloudflare gateway
@@ -17,9 +17,11 @@ outside the repo. Below they are written `<device key>` and `<agent key>`.
 ## 1. Give the Kindle a koreader_mcp that speaks WebSocket
 
 The Kindle needs `koreader_mcp.koplugin` with `ws.lua` (version 0.3.1 or later
-in `_meta.lua`). `koreader_mcp` is not in the GitHub registry, so do this while
-the Kindle is still on the LAN gateway:
+in `_meta.lua`). Any one of these gets it there:
 
+- on the Kindle, Tools, **Plugin packages**, with **Package host** empty (step
+  3): install or upgrade `koreader_mcp`, then restart KOReader. The new code
+  loads only after the restart, so turn Live mode off first;
 - with a live session open on the Kindle, call `deploy_plugin` with
   `{"device":"<kindle name>","plugin":"koreader_mcp"}` on the LAN gateway, from
   a checkout of `main`; or
@@ -62,10 +64,9 @@ On the Kindle: Tools, **Plugin packages**. Leave **Package host** empty: the
 installer then reads `registry/index.json` from the `main` branch on GitHub
 and downloads archives from GitHub Releases, checking size and sha256. A
 Package host of `http://<home server>:9999/pkg/` stops working when the LAN
-gateway is retired, so clear it. The registry carries `pluginpackages` and
-`syncedhistory`; anything else must be published first with
+gateway is retired, so clear it. A plugin reaches the registry by
 `scripts/publish.sh --github <plugin>` and the manifest change merged to
-`main`.
+`main`; `registry/index.json` is the list of what is there.
 
 ## 4. Connect an agent
 

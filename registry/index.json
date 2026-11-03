@@ -2,6 +2,24 @@
   "format": 1,
   "plugins": [
     {
+      "name": "koreader_mcp",
+      "version": "0.3.1",
+      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/koreader_mcp-v0.3.1/koreader_mcp-0.3.1.tar.gz",
+      "size": 28086,
+      "sha256": "d533091f664d245ea30130ae24b59cc48daa6b769f16b41339319c521e2adc7d",
+      "description": "Agent bridge for remote device management. While live mode is on, the device holds a connection to the gateway and answers file, command, status and UI calls over it. Send diagnostics uploads one bundle to the gateway inbox.",
+      "fullname": "KOReader MCP Server"
+    },
+    {
+      "name": "kosyncserverless",
+      "version": "0.2.0",
+      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/kosyncserverless-v0.2.0/kosyncserverless-0.2.0.tar.gz",
+      "size": 18715,
+      "sha256": "640623415f14fc5b2f1fd32b5a79efb6b95c8bbd72827f1f31d575dfaaac38ca",
+      "description": "Synchronizes your reading progress to a server across your KOReader devices. A copy of the built-in Progress sync plugin for servers that sleep when idle.",
+      "fullname": "Progress sync serverless"
+    },
+    {
       "name": "pluginpackages",
       "version": "0.2.0",
       "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/pluginpackages-v0.2.0/pluginpackages-0.2.0.tar.gz",
@@ -9,6 +27,15 @@
       "sha256": "5bfca3e141b1590d9cce7f02f07fa825e692dea79f45df704c1afc3e00b2f65d",
       "description": "Install, upgrade and roll back plugins from a package host, including this one. Uses WiFi only when you open it.",
       "fullname": "Plugin packages"
+    },
+    {
+      "name": "rssreader",
+      "version": "0.4.1",
+      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/rssreader-v0.4.1/rssreader-0.4.1.tar.gz",
+      "size": 74842,
+      "sha256": "73f69349fdc0898513975f78133405b79583ef3f14bb42d7bc9c9ceecf90b0ad",
+      "description": "Read RSS feeds from local lists or online services.",
+      "fullname": "RSS Reader"
     },
     {
       "name": "syncedhistory",

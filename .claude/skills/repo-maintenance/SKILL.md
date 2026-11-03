@@ -49,7 +49,7 @@ Simply true, and expensive to re-derive.
 | [Gateway configuration](../../../docs/reference/configuration.md) | environment variables read by the gateway container and where they are set | 2026-10-31 |
 | [Kindle power daemon (powerd) properties and sleep timers](../../../docs/reference/kindle-powerd.md) | what com.lab126.powerd exposes on a Paperwhite 3 for delaying suspend, and the timers between the power button and sleep | 2026-11-03 |
 | [Kindle SSH access and ports](../../../docs/reference/kindle-ssh-access.md) | the two SSH servers on a jailbroken Paperwhite 3, which survives a KOReader restart, and which ports matter | 2026-10-28 |
-| [Moving a Kindle to the Cloudflare gateway](../../../docs/reference/move-kindle-to-cloudflare-gateway.md) | give a Kindle a koreader_mcp that speaks WebSocket, point it at wss://kindle.kenluu.org/device with the device key, install plugins from the GitHub registry, connect an agent, and when the home server's LAN gateway can be retired | 2026-11-03 |
+| [Moving a Kindle to the Cloudflare gateway](../../../docs/reference/move-kindle-to-cloudflare-gateway.md) | give a Kindle a koreader_mcp that speaks WebSocket, point it at wss://kindle.kenluu.org/device with the device key, install plugins from the GitHub registry, connect an agent, and when the home server's LAN gateway can be retired | 2026-11-04 |
 | [Installing progress sync serverless on a Kindle](../../../docs/reference/progress-sync-serverless-install.md) | install the serverless progress sync and synced reading list packages through Plugin packages, turn off the built-in Progress sync, log in, and where each setting is stored | 2026-11-03 |
 
 ## Decisions
