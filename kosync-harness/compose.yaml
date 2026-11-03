@@ -1,0 +1,49 @@
+# Local kosyncd behind a cold-start delay proxy. See README.md.
+name: kosync-harness
+
+services:
+  kosyncd:
+    build:
+      # kosyncd source lives in the omv-move repo; it is only read, never changed.
+      context: ${KOSYNCD_SRC:-../../omv-move/kosync-serverless/kosyncd}
+      dockerfile_inline: |
+        FROM golang:1.26 AS build
+        WORKDIR /src
+        COPY go.mod go.sum ./
+        RUN go mod download
+        COPY main.go ./
+        RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /kosyncd .
+        FROM alpine:latest
+        COPY --from=build /kosyncd /usr/local/bin/kosyncd
+        ENTRYPOINT ["/usr/local/bin/kosyncd"]
+    image: kosync-harness-kosyncd:local
+    container_name: kosync-harness-kosyncd
+    environment:
+      KOSYNC_DB_PATH: /data/kosync.db
+      ENABLE_USER_REGISTRATION: "true"
+    volumes:
+      - ./data:/data
+    ports:
+      # direct, unproxied access for measuring kosyncd itself
+      - "${HARNESS_BIND:-127.0.0.1}:${KOSYNCD_PORT:-17201}:8080"
+    restart: unless-stopped
+
+  proxy:
+    image: python:3.12-slim-bookworm
+    container_name: kosync-harness-proxy
+    command: ["python3", "-u", "/app/delayproxy.py"]
+    environment:
+      UPSTREAM: http://kosyncd:8080
+      LISTEN_PORT: "8080"
+      HOLD_S: ${HOLD_S:-12}
+      IDLE_S: ${IDLE_S:-60}
+      FORWARD_ABANDONED: ${FORWARD_ABANDONED:-0}
+      LOG_FILE: /logs/proxy.log
+    volumes:
+      - ./proxy:/app:ro
+      - ./logs:/logs
+    ports:
+      - "${HARNESS_BIND:-127.0.0.1}:${PROXY_PORT:-17200}:8080"
+    depends_on:
+      - kosyncd
+    restart: unless-stopped
