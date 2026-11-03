@@ -2,7 +2,8 @@
 Synced reading list: one reading list shared by every device logged into the
 same progress sync server. One menu entry opens the list: the cached copy at
 once, then the server's copy. Tapping a book on this device opens it and asks
-the built-in progress sync to pull its latest position.
+the progress sync plugin (the built-in one or "Progress sync serverless", see
+syncedhistory_backend.lua) to pull its latest position.
 ]]
 
 local ButtonDialog = require("ui/widget/buttondialog")
@@ -14,6 +15,7 @@ local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
 local LuaSettings = require("luasettings")
 local Menu = require("ui/widget/menu")
+local PluginLoader = require("pluginloader")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local json = require("json")
@@ -24,6 +26,7 @@ local socket = require("socket")
 local filemanagerutil = require("apps/filemanager/filemanagerutil")
 local _ = require("gettext")
 
+local Backend = require("syncedhistory_backend")
 local Client = require("syncedhistory_client")
 local DeviceId = require("syncedhistory_deviceid")
 local Http = require("syncedhistory_http")
@@ -91,15 +94,45 @@ local function getIndex()
     return index
 end
 
--- The built-in progress sync settings. Its live table when it is loaded (it
--- only is while a book is open, and it may hold a login not flushed yet),
--- otherwise its settings file, or up to v2024.11 the "kosync" key of the
+-- The reader's ui while a book is open: both progress sync plugins are
+-- doc-only, so ui.kosync and ui.kosyncserverless exist only then.
+local live_ui
+
+-- Is this progress sync plugin loaded? Its instance while a book is open,
+-- otherwise whether PluginLoader enabled it at start-up (the file browser
+-- never builds doc-only plugins, but they are still in enabled_plugins).
+local function hasPlugin(name)
+    if live_ui and live_ui[name] then return true end
+    for _, plugin in ipairs(PluginLoader.enabled_plugins or {}) do
+        if plugin.name == name then return true end
+    end
+    return false
+end
+
+local fallback_logged
+local function logFallbackOnce(...)
+    if fallback_logged then return end
+    fallback_logged = true
+    logger.warn(...)
+end
+
+-- The progress sync plugin chosen in "Synced reading list backend".
+local function getBackend()
+    return Backend.resolve(getSettings():readSetting(Backend.SETTING), hasPlugin, logFallbackOnce)
+end
+
+-- The chosen progress sync plugin's settings. Its live table while a book
+-- is open (it may hold a login not flushed yet), otherwise its settings
+-- file, or for the built-in one up to v2024.11 the "kosync" key of the
 -- global reader settings.
-local live_kosync
 local function readKosyncSettings()
-    if live_kosync and live_kosync.settings then return live_kosync.settings end
-    local file = DataStorage:getSettingsDir() .. "/kosync.lua"
-    if lfs.attributes(file, "mode") ~= "file" then return G_reader_settings:readSetting("kosync") end
+    local backend = getBackend()
+    local live = live_ui and live_ui[backend.module]
+    if live and live.settings then return live.settings end
+    local file = DataStorage:getSettingsDir() .. "/" .. backend.settings_file
+    if lfs.attributes(file, "mode") ~= "file" then
+        return backend.legacy_key and G_reader_settings:readSetting(backend.legacy_key)
+    end
     return LuaSettings:open(file):readSetting("settings")
 end
 
@@ -129,34 +162,41 @@ local SyncedHistory = WidgetContainer:extend{
 -- For later changes and for the on-device checks.
 SyncedHistory.getIndex = getIndex
 SyncedHistory.getClient = getClient
+SyncedHistory.getBackend = getBackend
 
 function SyncedHistory:init()
     self.ui.menu:registerToMainMenu(self)
 end
 
--- Ask the built-in progress sync to pull this book's position, through its
--- own "Pull progress from other devices" action. In KOReader v2026.07.1,
+-- Ask the chosen progress sync plugin to pull this book's position, through
+-- its own "Pull progress from other devices" action. In KOReader v2026.07.1,
 -- KOSync:onKOSyncPullProgress calls getProgress(true, true): it turns the
 -- network on if needed and, being interactive, jumps to the server's
 -- position without a prompt, whatever the "sync to a newer/older state"
--- settings say.
+-- settings say. The serverless clone's onKOSyncServerlessPullProgress does
+-- the same. Each plugin answers only its own event, so with both enabled
+-- only the chosen one pulls.
 function SyncedHistory:pullProgress()
-    if not self.ui.kosync then
+    local backend = getBackend()
+    if not self.ui[backend.module] then
         UIManager:show(InfoMessage:new{
-            text = _("Progress sync is disabled, so the position was not pulled."),
+            text = backend == Backend.SERVERLESS
+                and _("Progress sync serverless is disabled, so the position was not pulled.")
+                or _("Progress sync is disabled, so the position was not pulled."),
             timeout = 3,
         })
         return
     end
-    logger.info("syncedhistory: pulling progress for", self.ui.document and self.ui.document.file)
-    self.ui:handleEvent(Event:new("KOSyncPullProgress"))
+    logger.info("syncedhistory: pulling progress with", backend.module, "for",
+        self.ui.document and self.ui.document.file)
+    self.ui:handleEvent(Event:new(backend.pull_event))
 end
 
 -- Every book open tells the server the book's file name, so other devices
 -- can show it in their list. A book opened from the list also pulls its
 -- position, after the reader has restored the local one.
 function SyncedHistory:onReaderReady()
-    live_kosync = self.ui.kosync
+    live_ui = self.ui
     local file = self.ui.document and self.ui.document.file
     if file then getClient():pushDocument(file) end
     local pull = file ~= nil and file == pending_pull
@@ -167,7 +207,7 @@ function SyncedHistory:onReaderReady()
 end
 
 function SyncedHistory:onCloseDocument()
-    live_kosync = nil
+    live_ui = nil
 end
 
 -- filemanagerutil.openFile arrived after v2024.11. Without it, make the two
@@ -443,12 +483,47 @@ function SyncedHistory:showList()
     self:fetchIntoList(menu, state)
 end
 
+local BACKEND_TEXT = {
+    auto = _("Automatic (serverless when installed)"),
+    kosync = _("Progress sync (built-in)"),
+    serverless = _("Progress sync serverless"),
+}
+
+-- "Synced reading list backend": which plugin the list reads its login from and
+-- asks to pull a position. Kept per device in syncedhistory.lua.
+function SyncedHistory:backendMenu()
+    local items = {}
+    for i, choice in ipairs(Backend.CHOICES) do
+        items[i] = {
+            text = BACKEND_TEXT[choice],
+            radio = true,
+            checked_func = function()
+                return Backend.choice(getSettings():readSetting(Backend.SETTING)) == choice
+            end,
+            callback = function()
+                getSettings():saveSetting(Backend.SETTING, choice)
+                getSettings():flush()
+                fallback_logged = nil
+                logger.info("syncedhistory: progress sync backend", choice, "->", getBackend().module)
+            end,
+        }
+    end
+    return {
+        text_func = function()
+            return _("Synced reading list backend") .. ": " .. _(getBackend().title)
+        end,
+        sub_item_table = items,
+    }
+end
+
 function SyncedHistory:addToMainMenu(menu_items)
     menu_items.synced_reading_list = {
         text = _(ListView.TITLE),
         sorting_hint = "main",
         callback = function() self:showList() end,
     }
+    menu_items.synced_reading_list_backend = self:backendMenu()
+    menu_items.synced_reading_list_backend.sorting_hint = "tools"
 end
 
 return SyncedHistory

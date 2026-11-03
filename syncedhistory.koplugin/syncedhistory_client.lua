@@ -41,7 +41,7 @@ Client.CHECKSUM_FILENAME = 1
 -- kosync.koplugin/KOSyncClient.lua, the GinClient middleware
 Client.ACCEPT = "application/vnd.koreader.v1+json"
 
-Client.MSG_LOGIN = "Synced reading list uses the built-in progress sync. Set its custom sync server and log in there first."
+Client.MSG_LOGIN = "Synced reading list uses the progress sync plugin chosen in Synced reading list backend. Set its custom sync server and log in there first."
 Client.MSG_METHOD = "Progress sync must match documents by file name (Progress sync > Document matching method)."
 Client.MSG_CACHED = "Could not reach the sync server. Showing the cached list."
 Client.MSG_NO_CACHE = "Could not reach the sync server, and there is no cached list yet."
@@ -53,7 +53,8 @@ local function noop() end
 Create a client.
 
 @tparam table opts
-  kosync       (required) function() -> the built-in sync settings table
+  kosync       (required) function() -> the chosen progress sync plugin's
+               settings table
                (custom_server, username, userkey, checksum_method), or nil
   request      (required) function(req, callback); req has method, url,
                headers, body, timeout; callback(res) with res.status (number

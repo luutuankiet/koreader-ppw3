@@ -10,8 +10,12 @@ Two ways to run it:
      LuaSettings, on a temporary folder. Run from the KOReader install folder
      (the one holding setupkoenv.lua), passing an optional library folder to
      time a full scan of it (fails above 1000 ms):
-       cd /opt/ko/lib/koreader          # emulator; /mnt/us/koreader on a Kindle
+       cd /mnt/us/koreader          # Kindle and emulator
        ./luajit <plugin dir>/test_localindex.lua --koreader [library folder]
+     The key is checked against the progress sync plugin the setting picks
+     (syncedhistory_backend.lua): SYNCEDHISTORY_BACKEND=auto (default),
+     kosync or serverless. Its main.lua is looked for in plugins/ and next
+     to this plugin's folder.
 ]]
 
 local mode = arg and arg[1] == "--koreader" and "koreader" or "standalone"
@@ -56,24 +60,35 @@ if mode == "koreader" then
         return LuaSettings:open(top .. "/" .. name .. ".settings.lua")
     end
 
-    -- The key KOReader's built-in sync computes for a book at `path` with the
-    -- file-name method. Loading all of kosync's main.lua needs a running
-    -- device layer, so cut KOSync:getFileNameDigest (and KOSync:getFileName,
-    -- which v2024.11 does not have yet) out of the installed source and run
-    -- that text with kosync's own md5 and util. If the source has changed
-    -- shape, fail loudly.
-    local f = assert(io.open("plugins/kosync.koplugin/main.lua"))
+    -- The key the chosen progress sync plugin computes for a book at `path`
+    -- with the file-name method. Loading all of its main.lua needs a
+    -- running device layer, so cut <Class>:getFileNameDigest (and
+    -- <Class>:getFileName, which v2024.11 does not have yet) out of the
+    -- plugin's source and run that text with its own md5 and util. If the
+    -- source has changed shape, fail loudly.
+    local Backend = require("syncedhistory_backend")
+    local function exists(path)
+        local fh = io.open(path, "r")
+        if fh then fh:close() return true end
+        return false
+    end
+    local backend, source = Backend.fromSources(os.getenv("SYNCEDHISTORY_BACKEND"),
+        { "plugins", this_dir .. "/.." }, exists, print)
+    assert(source, backend.plugin_dir .. "/main.lua not found")
+    local f = assert(io.open(source))
     local src = f:read("*a")
     f:close()
-    local fn_name = src:match("\nfunction KOSync:getFileName%(%).-\nend\n") or ""
-    local fn_digest = src:match("\nfunction KOSync:getFileNameDigest%(%).-\nend\n")
-    assert(fn_digest, "kosync getFileNameDigest not found")
-    local chunk = assert(loadstring("local KOSync, md5, util = ...\n" .. fn_name .. fn_digest))
-    local KOSync = {}
-    chunk(KOSync, md5, util)
-    env.kosync_source = "plugins/kosync.koplugin/main.lua, KOSync:getFileNameDigest source text"
+    local cls = backend.class
+    local fn_name = src:match("\nfunction " .. cls .. ":getFileName%(%).-\nend\n") or ""
+    local fn_digest = src:match("\nfunction " .. cls .. ":getFileNameDigest%(%).-\nend\n")
+    assert(fn_digest, cls .. " getFileNameDigest not found in " .. source)
+    local chunk = assert(loadstring("local " .. cls .. ", md5, util = ...\n" .. fn_name .. fn_digest))
+    local Plugin = {}
+    chunk(Plugin, md5, util)
+    env.kosync_source = source .. ", " .. cls .. ":getFileNameDigest source text (backend "
+        .. backend.id .. ")"
     function env.kosyncKey(path)
-        local fake = setmetatable({ ui = { document = { file = path } } }, { __index = KOSync })
+        local fake = setmetatable({ ui = { document = { file = path } } }, { __index = Plugin })
         return fake:getFileNameDigest()
     end
     function env.cleanup() os.execute("rm -rf '" .. top .. "'") end
@@ -154,9 +169,9 @@ local function newIndex(root, settings)
     }
 end
 
-print("mode: " .. mode .. "; built-in sync key from: " .. env.kosync_source)
+print("mode: " .. mode .. "; progress sync key from: " .. env.kosync_source)
 
-test("key matches the built-in sync key for the same file", function(root)
+test("key matches the progress sync key for the same file", function(root)
     local path = root .. "/Some Author/The Book (12).epub"
     env.mkfile(path)
     local index = newIndex(root)
