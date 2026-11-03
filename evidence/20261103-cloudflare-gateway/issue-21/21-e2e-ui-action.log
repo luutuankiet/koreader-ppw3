@@ -1,0 +1,95 @@
+2026-11-03T16:23:35.795Z PASS snapshot {"device":"emu"}
+snapshot 2 · window KOReader · 14 widgets
+[2_1] text "KOReader"
+[2_2] text "⁦⁨Home⁩⁩"
+[2_3] icon "home"
+[2_4] icon "plus"
+[2_5] row "⬆ ../"
+[2_6] row "tech/ | 1  2 "
+[2_7] row "Laws of chess - INTERUNFALL Versicherung AG.pdf | 300.7 kB"
+[2_8] row "Thanks for the Feedback - Douglas Stone.epub | 4.5 MB"
+[2_9] button "icon:back.top" (disabled)
+[2_10] button "icon:chevron.first" (disabled)
+[2_11] button "icon:chevron.left" (disabled)
+[2_12] button "Page 1 of 1" (disabled)
+[2_13] button "icon:chevron.right" (disabled)
+[2_14] button "icon:chevron.last" (disabled)
+2026-11-03T16:23:36.843Z PASS tap {"device":"emu","ref":"2_6"}
+tap at 536,322 on 2_6 row "tech/ | 1  2 "
+
+snapshot 3 · window KOReader · 14 widgets
+[3_1] text "KOReader"
+[3_2] text "⁦⁨tech⁩⁩"
+[3_3] icon "home"
+[3_4] icon "plus"
+[3_5] row "⬆ ../"
+[3_6] row "programming/ | 2 "
+[3_7] row "JavaScript_ The Good Parts - Douglas Crockford.epub | 3.3 MB"
+[3_8] row "Man's Search For Meaning - Victor E. Frankl.pdf | 1.2 MB"
+[3_9] button "icon:back.top" (disabled)
+[3_10] button "icon:chevron.first" (disabled)
+[3_11] button "icon:chevron.left" (disabled)
+[3_12] button "Page 1 of 1" (disabled)
+[3_13] button "icon:chevron.right" (disabled)
+[3_14] button "icon:chevron.last" (disabled)
+
+logs: none
+2026-11-03T16:23:37.261Z PASS snapshot {"device":"emu"}
+snapshot 4 · window KOReader · 14 widgets
+[4_1] text "KOReader"
+[4_2] text "⁦⁨tech⁩⁩"
+[4_3] icon "home"
+[4_4] icon "plus"
+[4_5] row "⬆ ../"
+[4_6] row "programming/ | 2 "
+[4_7] row "JavaScript_ The Good Parts - Douglas Crockford.epub | 3.3 MB"
+[4_8] row "Man's Search For Meaning - Victor E. Frankl.pdf | 1.2 MB"
+[4_9] button "icon:back.top" (disabled)
+[4_10] button "icon:chevron.first" (disabled)
+[4_11] button "icon:chevron.left" (disabled)
+[4_12] button "Page 1 of 1" (disabled)
+[4_13] button "icon:chevron.right" (disabled)
+[4_14] button "icon:chevron.last" (disabled)
+2026-11-03T16:23:43.164Z PASS screenshot {"device":"emu"}
+{
+  "device": "emu",
+  "size_bytes": 93189
+}
+2026-11-03T16:23:43.165Z in folder: yes
+2026-11-03T16:23:44.124Z PASS tap {"device":"emu","ref":"4_5"}
+tap at 536,200 on 4_5 row "⬆ ../"
+
+snapshot 5 · window KOReader · 14 widgets
+[5_1] text "KOReader"
+[5_2] text "⁦⁨Home⁩⁩"
+[5_3] icon "home"
+[5_4] icon "plus"
+[5_5] row "⬆ ../"
+[5_6] row "tech/ | 1  2 "
+[5_7] row "Laws of chess - INTERUNFALL Versicherung AG.pdf | 300.7 kB"
+[5_8] row "Thanks for the Feedback - Douglas Stone.epub | 4.5 MB"
+[5_9] button "icon:back.top" (disabled)
+[5_10] button "icon:chevron.first" (disabled)
+[5_11] button "icon:chevron.left" (disabled)
+[5_12] button "Page 1 of 1" (disabled)
+[5_13] button "icon:chevron.right" (disabled)
+[5_14] button "icon:chevron.last" (disabled)
+
+logs: none
+2026-11-03T16:23:44.481Z PASS snapshot {"device":"emu"}
+snapshot 6 · window KOReader · 14 widgets
+[6_1] text "KOReader"
+[6_2] text "⁦⁨Home⁩⁩"
+[6_3] icon "home"
+[6_4] icon "plus"
+[6_5] row "⬆ ../"
+[6_6] row "tech/ | 1  2 "
+[6_7] row "Laws of chess - INTERUNFALL Versicherung AG.pdf | 300.7 kB"
+[6_8] row "Thanks for the Feedback - Douglas Stone.epub | 4.5 MB"
+[6_9] button "icon:back.top" (disabled)
+[6_10] button "icon:chevron.first" (disabled)
+[6_11] button "icon:chevron.left" (disabled)
+[6_12] button "Page 1 of 1" (disabled)
+[6_13] button "icon:chevron.right" (disabled)
+[6_14] button "icon:chevron.last" (disabled)
+2026-11-03T16:23:44.482Z back home: yes

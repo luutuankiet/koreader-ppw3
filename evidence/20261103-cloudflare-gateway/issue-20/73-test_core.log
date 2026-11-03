@@ -1,0 +1,10 @@
+has monolibtic? no (libs/libkoreader-monolibtic.so: cannot open shared object file: No such file or directory)
+lib_search_path: libs/?
+lib_basic_format: lib%s.so
+lib_version_format: lib%s.so.%s
+ffi.findlib: archive [13]
+ffi.load: libs/libarchive.so.13
+ffi.load: rt.so.1 (RTLD_GLOBAL)
+Archive.Reader:open failed:	truncated gzip input
+118 checks, 0 failed
+exit=0

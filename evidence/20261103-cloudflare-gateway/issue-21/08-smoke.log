@@ -1,0 +1,18 @@
+== GET /health
+ok [200]
+== POST /mcp no key
+unauthorized [401]
+== POST /mcp wrong key
+unauthorized [401]
+== GET /device no key
+unauthorized [401]
+== PUT /inbox no key
+unauthorized [401]
+== 2025-11-25 initialize
+HTTP/2 200 
+data: {"result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{"listChanged":true}},"serverInfo":{"name":"kindle-gateway","version":"3.0.0"}},"jsonrpc":"2.0","id":1}
+== 2025-11-25 tools/list
+20 tools: action close_top_widget device_status get_current_view get_menu_items go_back hold list_devices list_diagnostics read_diagnostics read_files restart_koreader run_command screenshot select_menu_item send_event snapshot tap tap_text type
+== 2026-07-28 server/discover
+HTTP/2 400 
+{"jsonrpc":"2.0","error":{"code":-32602,"message":"Invalid params: the MCP-Protocol-Version header names protocol revision 2026-07-28, but the request is missing the required per-request envelope key(s): _meta","data":{"envelope":{"missing":["_meta"]}}},"id":3}

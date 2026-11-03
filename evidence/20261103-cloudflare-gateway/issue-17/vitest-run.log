@@ -1,0 +1,134 @@
+
+ RUN  v4.1.12 $HOME/dev/koreader-ppw3/.claude/worktrees/agent-a1cacf61ce6560f0c/kindle-gateway-worker
+
+Using secrets defined in .dev.vars
+stdout | test/hub.test.ts > hello > welcomes a valid hello and lists the device
+[hub] 'kindle-a' online from unknown (KOReader v2026.07.1)
+
+stdout | test/hub.test.ts > hello > refuses a name held by another device and closes the socket
+[hub] 'kindle-a' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > hello > refuses a name held by another device and closes the socket
+[hub] 'kindle-b' online from unknown (KOReader v2026.07.1)
+
+stderr | test/hub.test.ts > hello > refuses a name held by another device and closes the socket
+[hub] refused 'kindle-b' from unknown: name 'kindle-b' is held by another device
+
+stdout | test/hub.test.ts > hello > lets the same device replace its old connection
+[hub] 'kindle-b' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > hello > lets the same device replace its old connection
+[hub] 'kindle-c' online from unknown (KOReader v2026.07.1)
+
+ ✓ test/hub.test.ts > Worker routing and auth > serves /health without a key 7ms
+ ✓ test/hub.test.ts > Worker routing and auth > answers 404 for anything else 7ms
+ ✓ test/hub.test.ts > Worker routing and auth > rejects /device without a key 4ms
+ ✓ test/hub.test.ts > Worker routing and auth > rejects /device with a wrong key 4ms
+ ✓ test/hub.test.ts > Worker routing and auth > rejects the agent key on /device 3ms
+ ✓ test/hub.test.ts > Worker routing and auth > wants a WebSocket upgrade on /device 4ms
+ ✓ test/hub.test.ts > Worker routing and auth > guards the debug routes with the agent key 11ms
+ ✓ test/hub.test.ts > hello > welcomes a valid hello and lists the device 20ms
+ ✓ test/hub.test.ts > hello > refuses a name held by another device and closes the socket 27ms
+stdout | test/hub.test.ts > hello > lets the same device replace its old connection
+[hub] 'kindle-c' offline: replaced by a new connection
+[hub] 'kindle-c' online from unknown (KOReader v2026.07.1)
+
+stdout | test/hub.test.ts > hello > lets the same device replace its old connection
+[hub] 'kindle-c' offline: connection closed (1000 replaced by a new connection)
+
+stdout | test/hub.test.ts > hello > refuses a malformed hello
+[hub] 'kindle-c' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > calls > round-trips a call and its result
+[hub] 'kindle-rt' online from unknown (KOReader v2026.07.1)
+
+stdout | test/hub.test.ts > calls > passes a device-side error back as a reply
+[hub] 'kindle-rt' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > calls > passes a device-side error back as a reply
+[hub] 'kindle-err' online from unknown (KOReader v2026.07.1)
+
+stdout | test/hub.test.ts > calls > times out when the device says nothing
+[hub] 'kindle-err' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > calls > times out when the device says nothing
+[hub] 'kindle-slow' online from unknown (KOReader v2026.07.1)
+
+ ✓ test/hub.test.ts > hello > lets the same device replace its old connection 31ms
+ ✓ test/hub.test.ts > hello > refuses a malformed hello 9ms
+ ✓ test/hub.test.ts > calls > round-trips a call and its result 15ms
+ ✓ test/hub.test.ts > calls > passes a device-side error back as a reply 16ms
+uncaught exception; source = Uncaught (in promise); stack = Error: no reply to echo within 0.3s
+uncaught exception; source = Uncaught (in promise); stack = Error: device 'nobody' is not connected
+stdout | test/hub.test.ts > calls > rejects a call to a device that is not connected
+[hub] 'kindle-slow' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > calls > rejects a pending call when the device disconnects
+[hub] 'kindle-drop' online from unknown (KOReader v2026.07.1)
+
+uncaught exception; source = Uncaught (in promise); stack = Error: device disconnected (connection closed (1000 test done))
+stdout | test/hub.test.ts > calls > rejects a pending call when the device disconnects
+[hub] 'kindle-drop' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > calls > reaches a device through /debug/call
+[hub] 'kindle-dbg' online from unknown (KOReader v2026.07.1)
+
+stdout | test/hub.test.ts > hibernation > answers the ping without waking the object
+[hub] 'kindle-dbg' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > hibernation > answers the ping without waking the object
+[hub] 'kindle-ping' online from unknown (KOReader v2026.07.1)
+
+stdout | test/hub.test.ts > hibernation > still answers a ping that is not byte-identical, by waking
+[hub] 'kindle-ping' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > hibernation > still answers a ping that is not byte-identical, by waking
+[hub] 'kindle-ping2' online from unknown (KOReader v2026.07.1)
+
+stdout | test/hub.test.ts > hibernation > rebuilds the registry and completes a call after the object hibernated and woke
+[hub] 'kindle-ping2' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > hibernation > rebuilds the registry and completes a call after the object hibernated and woke
+[hub] 'kindle-wake' online from unknown (KOReader v2026.07.1)
+
+stdout | test/hub.test.ts > hibernation > keeps refusing a duplicate name after waking
+[hub] 'kindle-wake' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > hibernation > keeps refusing a duplicate name after waking
+[hub] 'kindle-dup' online from unknown (KOReader v2026.07.1)
+
+ ✓ test/hub.test.ts > calls > times out when the device says nothing 323ms
+ ✓ test/hub.test.ts > calls > rejects a call to a device that is not connected 9ms
+ ✓ test/hub.test.ts > calls > rejects a pending call when the device disconnects 17ms
+ ✓ test/hub.test.ts > calls > reaches a device through /debug/call 16ms
+ ✓ test/hub.test.ts > hibernation > pins the heartbeat frames the Lua client sends and expects 0ms
+ ✓ test/hub.test.ts > hibernation > answers the ping without waking the object 16ms
+ ✓ test/hub.test.ts > hibernation > still answers a ping that is not byte-identical, by waking 13ms
+ ✓ test/hub.test.ts > hibernation > rebuilds the registry and completes a call after the object hibernated and woke 17ms
+stderr | test/hub.test.ts > hibernation > keeps refusing a duplicate name after waking
+[hub] refused 'kindle-dup' from unknown: name 'kindle-dup' is held by another device
+
+stdout | test/hub.test.ts > waitForReconnect > resolves when the device comes back
+[hub] 'kindle-dup' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > waitForReconnect > resolves when the device comes back
+[hub] 'kindle-re' online from unknown (KOReader v2026.07.1)
+
+stdout | test/hub.test.ts > waitForReconnect > resolves when the device comes back
+[hub] 'kindle-re' offline: connection closed (1000 test done)
+
+stdout | test/hub.test.ts > waitForReconnect > resolves when the device comes back
+[hub] 'kindle-re' online from unknown (KOReader v2026.07.1)
+
+stdout | test/hub.test.ts > waitForReconnect > resolves null when the device stays away
+[hub] 'kindle-re' offline: connection closed (1000 test done)
+
+ ✓ test/hub.test.ts > hibernation > keeps refusing a duplicate name after waking 19ms
+ ✓ test/hub.test.ts > waitForReconnect > resolves when the device comes back 41ms
+ ✓ test/hub.test.ts > waitForReconnect > resolves null when the device stays away 206ms
+
+ Test Files  1 passed (1)
+      Tests  24 passed (24)
+   Start at  22:38:12
+   Duration  2.69s (transform 100ms, setup 0ms, import 148ms, tests 838ms, environment 0ms)
+

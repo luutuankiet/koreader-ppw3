@@ -1,0 +1,138 @@
+file://$HOME/dev/koreader-ppw3/.claude/worktrees/cf-deploy-21/kindle-gateway-worker/node_modules/@modelcontextprotocol/client/dist/public-CvV4ZHkX.mjs:2134
+		error: new SdkError(SdkErrorCode.EraNegotiationFailed, `Version negotiation probe failed: ${describeError(error)}`, { cause: error }, { cause: error })
+		       ^
+
+SdkError: Version negotiation probe failed: fetch failed
+    at classifyNetworkError (file://$HOME/dev/koreader-ppw3/.claude/worktrees/cf-deploy-21/kindle-gateway-worker/node_modules/@modelcontextprotocol/client/dist/public-CvV4ZHkX.mjs:2134:10)
+    at classifyProbeOutcome (file://$HOME/dev/koreader-ppw3/.claude/worktrees/cf-deploy-21/kindle-gateway-worker/node_modules/@modelcontextprotocol/client/dist/public-CvV4ZHkX.mjs:2039:32)
+    at probe (file://$HOME/dev/koreader-ppw3/.claude/worktrees/cf-deploy-21/kindle-gateway-worker/node_modules/@modelcontextprotocol/client/dist/public-CvV4ZHkX.mjs:2450:20)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async negotiateEra (file://$HOME/dev/koreader-ppw3/.claude/worktrees/cf-deploy-21/kindle-gateway-worker/node_modules/@modelcontextprotocol/client/dist/public-CvV4ZHkX.mjs:2481:12)
+    at async Client._connectNegotiated (file://$HOME/dev/koreader-ppw3/.claude/worktrees/cf-deploy-21/kindle-gateway-worker/node_modules/@modelcontextprotocol/client/dist/public-CvV4ZHkX.mjs:3027:38)
+    at async <topic-folder>/74/e2e-client.mjs:12:1 {
+  code: 'ERA_NEGOTIATION_FAILED',
+  data: {
+    cause: TypeError: fetch failed
+        at node:internal/deps/undici/undici:13510:13
+        at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+        at async file://$HOME/dev/koreader-ppw3/.claude/worktrees/cf-deploy-21/kindle-gateway-worker/node_modules/@modelcontextprotocol/client/dist/src-CeKsbNLO.mjs:6861:21
+        at async StreamableHTTPClientTransport._send (file://$HOME/dev/koreader-ppw3/.claude/worktrees/cf-deploy-21/kindle-gateway-worker/node_modules/@modelcontextprotocol/client/dist/index.mjs:1724:21) {
+      [cause]: AggregateError [ETIMEDOUT]: 
+          at internalConnectMultiple (node:net:1134:18)
+          at internalConnectMultiple (node:net:1210:5)
+          at Timeout.internalConnectMultipleTimeout (node:net:1742:5)
+          at listOnTimeout (node:internal/timers:590:11)
+          at process.processTimers (node:internal/timers:523:7) {
+        code: 'ETIMEDOUT',
+        [errors]: [
+          Error: connect ETIMEDOUT 104.21.56.184:443
+              at createConnectionError (node:net:1678:14)
+              at Timeout.internalConnectMultipleTimeout (node:net:1737:38)
+              at listOnTimeout (node:internal/timers:590:11)
+              at process.processTimers (node:internal/timers:523:7) {
+            errno: -110,
+            code: 'ETIMEDOUT',
+            syscall: 'connect',
+            address: '104.21.56.184',
+            port: 443
+          },
+          Error: connect ENETUNREACH 2606:4700:3033::6815:38b8:443 - Local (:::0)
+              at internalConnectMultiple (node:net:1206:16)
+              at Timeout.internalConnectMultipleTimeout (node:net:1742:5)
+              at listOnTimeout (node:internal/timers:590:11)
+              at process.processTimers (node:internal/timers:523:7) {
+            errno: -101,
+            code: 'ENETUNREACH',
+            syscall: 'connect',
+            address: '2606:4700:3033::6815:38b8',
+            port: 443
+          },
+          Error: connect ETIMEDOUT 172.67.155.72:443
+              at createConnectionError (node:net:1678:14)
+              at Timeout.internalConnectMultipleTimeout (node:net:1737:38)
+              at listOnTimeout (node:internal/timers:590:11)
+              at process.processTimers (node:internal/timers:523:7) {
+            errno: -110,
+            code: 'ETIMEDOUT',
+            syscall: 'connect',
+            address: '172.67.155.72',
+            port: 443
+          },
+          Error: connect ENETUNREACH 2606:4700:3031::ac43:9b48:443 - Local (:::0)
+              at internalConnectMultiple (node:net:1206:16)
+              at Timeout.internalConnectMultipleTimeout (node:net:1742:5)
+              at listOnTimeout (node:internal/timers:590:11)
+              at process.processTimers (node:internal/timers:523:7) {
+            errno: -101,
+            code: 'ENETUNREACH',
+            syscall: 'connect',
+            address: '2606:4700:3031::ac43:9b48',
+            port: 443
+          }
+        ]
+      }
+    }
+  },
+  [cause]: TypeError: fetch failed
+      at node:internal/deps/undici/undici:13510:13
+      at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+      at async file://$HOME/dev/koreader-ppw3/.claude/worktrees/cf-deploy-21/kindle-gateway-worker/node_modules/@modelcontextprotocol/client/dist/src-CeKsbNLO.mjs:6861:21
+      at async StreamableHTTPClientTransport._send (file://$HOME/dev/koreader-ppw3/.claude/worktrees/cf-deploy-21/kindle-gateway-worker/node_modules/@modelcontextprotocol/client/dist/index.mjs:1724:21) {
+    [cause]: AggregateError [ETIMEDOUT]: 
+        at internalConnectMultiple (node:net:1134:18)
+        at internalConnectMultiple (node:net:1210:5)
+        at Timeout.internalConnectMultipleTimeout (node:net:1742:5)
+        at listOnTimeout (node:internal/timers:590:11)
+        at process.processTimers (node:internal/timers:523:7) {
+      code: 'ETIMEDOUT',
+      [errors]: [
+        Error: connect ETIMEDOUT 104.21.56.184:443
+            at createConnectionError (node:net:1678:14)
+            at Timeout.internalConnectMultipleTimeout (node:net:1737:38)
+            at listOnTimeout (node:internal/timers:590:11)
+            at process.processTimers (node:internal/timers:523:7) {
+          errno: -110,
+          code: 'ETIMEDOUT',
+          syscall: 'connect',
+          address: '104.21.56.184',
+          port: 443
+        },
+        Error: connect ENETUNREACH 2606:4700:3033::6815:38b8:443 - Local (:::0)
+            at internalConnectMultiple (node:net:1206:16)
+            at Timeout.internalConnectMultipleTimeout (node:net:1742:5)
+            at listOnTimeout (node:internal/timers:590:11)
+            at process.processTimers (node:internal/timers:523:7) {
+          errno: -101,
+          code: 'ENETUNREACH',
+          syscall: 'connect',
+          address: '2606:4700:3033::6815:38b8',
+          port: 443
+        },
+        Error: connect ETIMEDOUT 172.67.155.72:443
+            at createConnectionError (node:net:1678:14)
+            at Timeout.internalConnectMultipleTimeout (node:net:1737:38)
+            at listOnTimeout (node:internal/timers:590:11)
+            at process.processTimers (node:internal/timers:523:7) {
+          errno: -110,
+          code: 'ETIMEDOUT',
+          syscall: 'connect',
+          address: '172.67.155.72',
+          port: 443
+        },
+        Error: connect ENETUNREACH 2606:4700:3031::ac43:9b48:443 - Local (:::0)
+            at internalConnectMultiple (node:net:1206:16)
+            at Timeout.internalConnectMultipleTimeout (node:net:1742:5)
+            at listOnTimeout (node:internal/timers:590:11)
+            at process.processTimers (node:internal/timers:523:7) {
+          errno: -101,
+          code: 'ENETUNREACH',
+          syscall: 'connect',
+          address: '2606:4700:3031::ac43:9b48',
+          port: 443
+        }
+      ]
+    }
+  }
+}
+
+Node.js v22.20.0

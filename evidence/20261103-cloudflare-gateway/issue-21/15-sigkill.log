@@ -1,0 +1,13 @@
+Tue Nov  3 04:21:47 PM UTC 2026
+kill -9 1297 rc=0
+    PID                  STARTED COMMAND
+2026-11-03T16:21:47.839050268Z /usr/local/bin/supervisor.sh: line 81:  1297 Killed                  ./luajit ./reader.lua
+2026-11-03T16:21:47.840718549Z [supervisor] 2026-11-03 16:21:47 KOReader exited with code 137; relaunching in 2 s
+   1685 Tue Nov  3 16:21:49 2026 luajit
+2026-11-03T16:21:47.840718549Z [supervisor] 2026-11-03 16:21:47 KOReader exited with code 137; relaunching in 2 s
+2026-11-03T16:21:49.848458875Z [supervisor] 2026-11-03 16:21:49 starting KOReader (launch 7)
+2026-11-03T16:21:50.250226388Z 11/03/26-16:21:50 INFO  [MCP] live mode gateway: wss://kindle.kenluu.org/device 
+   1685 Tue Nov  3 16:21:49 2026 luajit
+2026-11-03T16:21:49.848458875Z [supervisor] 2026-11-03 16:21:49 starting KOReader (launch 7)
+2026-11-03T16:21:50.250226388Z 11/03/26-16:21:50 INFO  [MCP] live mode gateway: wss://kindle.kenluu.org/device 
+2026-11-03T16:21:53.304887685Z 11/03/26-16:21:53 INFO  [MCP] live mode online as emu 

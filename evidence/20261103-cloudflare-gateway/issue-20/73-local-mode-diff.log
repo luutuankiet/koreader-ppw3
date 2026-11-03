@@ -1,0 +1,38 @@
+main exit 0
+branch exit 0
+--- diff -r of PKG_DIRs (empty = identical)
+diff exit 0
+--- stdout diff, PKG_DIR path replaced by <PKG_DIR>
+stdout diff exit 0
+--- branch stdout
+syncedhistory 0.2.0: 8 files -> <topic-folder>/73/local-mode/branch/syncedhistory-0.2.0.tar.gz
+pluginpackages 0.2.0: 3 files -> <topic-folder>/73/local-mode/branch/pluginpackages-0.2.0.tar.gz
+index.json: 2 plugin(s) in <topic-folder>/73/local-mode/branch
+--- index.json
+{
+  "format": 1,
+  "plugins": [
+    {
+      "name": "pluginpackages",
+      "version": "0.2.0",
+      "file": "pluginpackages-0.2.0.tar.gz",
+      "size": 9555,
+      "sha256": "5bfca3e141b1590d9cce7f02f07fa825e692dea79f45df704c1afc3e00b2f65d",
+      "description": "Install, upgrade and roll back plugins from a package host, including this one. Uses WiFi only when you open it.",
+      "fullname": "Plugin packages"
+    },
+    {
+      "name": "syncedhistory",
+      "version": "0.2.0",
+      "file": "syncedhistory-0.2.0.tar.gz",
+      "size": 18776,
+      "sha256": "aad7aa2cd2854d53c70b883270ff860728f80dfa5f17714beb255d6a975f9a1e",
+      "description": "A reading list shared by every device logged into the same progress sync server. Opens the local copy of a book and pulls its latest position.",
+      "fullname": "Synced reading list"
+    }
+  ]
+}
+--- second run of branch script (idempotent)
+syncedhistory 0.2.0: unchanged
+pluginpackages 0.2.0: unchanged
+index.json: 2 plugin(s) in <topic-folder>/73/local-mode/branch

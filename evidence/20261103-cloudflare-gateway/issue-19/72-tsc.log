@@ -1,0 +1,5 @@
+# HEAD 2c2ef19
+$ cd kindle-gateway && npx tsc --noEmit
+exit=0
+$ cd kindle-gateway-worker && npx tsc --noEmit
+exit=0

@@ -1,0 +1,80 @@
+{
+ "data": {
+  "viewer": {
+   "accounts": [
+    {
+     "doInv": [
+      {
+       "dimensions": {
+        "scriptName": "__unknown__",
+        "status": "clientDisconnected"
+       },
+       "sum": {
+        "requests": 1
+       }
+      },
+      {
+       "dimensions": {
+        "scriptName": "__unknown__",
+        "status": "success"
+       },
+       "sum": {
+        "requests": 50
+       }
+      }
+     ],
+     "doPeriodic": [
+      {
+       "dimensions": {
+        "namespaceId": "$CF_DO_NAMESPACE_ID"
+       },
+       "max": {
+        "activeWebsocketConnections": 1
+       },
+       "sum": {
+        "activeTime": 36155246,
+        "cpuTime": 1106230,
+        "duration": 4.627871488,
+        "exceededCpuErrors": 0,
+        "inboundWebsocketMsgCount": 0,
+        "outboundWebsocketMsgCount": 23,
+        "subrequests": 0
+       }
+      }
+     ],
+     "workers": [
+      {
+       "dimensions": {
+        "status": "success"
+       },
+       "quantiles": {
+        "cpuTimeP50": 2111,
+        "cpuTimeP99": 6700
+       },
+       "sum": {
+        "errors": 0,
+        "requests": 64,
+        "subrequests": 28
+       }
+      },
+      {
+       "dimensions": {
+        "status": "clientDisconnected"
+       },
+       "quantiles": {
+        "cpuTimeP50": 2705,
+        "cpuTimeP99": 2705
+       },
+       "sum": {
+        "errors": 0,
+        "requests": 1,
+        "subrequests": 1
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ "errors": null
+}

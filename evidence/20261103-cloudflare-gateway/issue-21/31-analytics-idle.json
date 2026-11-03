@@ -1,0 +1,57 @@
+{
+ "data": {
+  "viewer": {
+   "accounts": [
+    {
+     "doInv": [
+      {
+       "dimensions": {
+        "scriptName": "__unknown__",
+        "status": "success"
+       },
+       "sum": {
+        "requests": 3
+       }
+      }
+     ],
+     "doPeriodic": [
+      {
+       "dimensions": {
+        "namespaceId": "$CF_DO_NAMESPACE_ID"
+       },
+       "max": {
+        "activeWebsocketConnections": 1
+       },
+       "sum": {
+        "activeTime": 37828,
+        "cpuTime": 2125,
+        "duration": 0.0048419840000000006,
+        "exceededCpuErrors": 0,
+        "inboundWebsocketMsgCount": 0,
+        "outboundWebsocketMsgCount": 0,
+        "subrequests": 0
+       }
+      }
+     ],
+     "workers": [
+      {
+       "dimensions": {
+        "status": "success"
+       },
+       "quantiles": {
+        "cpuTimeP50": 2661,
+        "cpuTimeP99": 6700
+       },
+       "sum": {
+        "errors": 0,
+        "requests": 21,
+        "subrequests": 0
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ "errors": null
+}

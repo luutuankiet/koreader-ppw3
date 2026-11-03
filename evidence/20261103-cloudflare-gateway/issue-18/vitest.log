@@ -1,0 +1,20 @@
+
+ RUN  v4.1.12 $HOME/dev/koreader-ppw3/.claude/worktrees/cf-mcp-tools-18/kindle-gateway-worker
+
+Using secrets defined in .dev.vars
+Using secrets defined in .dev.vars
+uncaught exception; source = Uncaught (in promise); stack = Error: no reply to echo within 0.3s
+    at $HOME/dev/koreader-ppw3/.claude/worktrees/cf-mcp-tools-18/kindle-gateway-worker/src/hub.ts:165:16
+uncaught exception; source = Uncaught (in promise); stack = Error: device 'nobody' is not connected
+    at Hub.call ($HOME/dev/koreader-ppw3/.claude/worktrees/cf-mcp-tools-18/kindle-gateway-worker/src/hub.ts:160:24)
+    at $HOME/dev/koreader-ppw3/.claude/worktrees/cf-mcp-tools-18/kindle-gateway-worker/node_modules/@cloudflare/vitest-plugin/dist/worker/lib/cloudflare/test-internal.mjs:369:47
+uncaught exception; source = Uncaught (in promise); stack = Error: device disconnected (connection closed (1000 test done))
+    at Hub.dropSocket ($HOME/dev/koreader-ppw3/.claude/worktrees/cf-mcp-tools-18/kindle-gateway-worker/src/hub.ts:355:16)
+    at Hub.webSocketClose ($HOME/dev/koreader-ppw3/.claude/worktrees/cf-mcp-tools-18/kindle-gateway-worker/src/hub.ts:234:10)
+    at $HOME/dev/koreader-ppw3/.claude/worktrees/cf-mcp-tools-18/kindle-gateway-worker/node_modules/@cloudflare/vitest-plugin/dist/worker/lib/cloudflare/test-internal.mjs:567:56
+
+ Test Files  2 passed (2)
+      Tests  48 passed (48)
+   Start at  23:02:58
+   Duration  7.45s (transform 2.27s, setup 0ms, import 8.22s, tests 2.42s, environment 0ms)
+
