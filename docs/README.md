@@ -15,7 +15,7 @@ something is implemented.
 
 | page | covers | verified |
 |---|---|---|
-| [Plugin deploy pipeline](architecture/deploy-pipeline.md) | how a plugin directory gets onto a Kindle: the GitHub registry (registry/index.json and Releases) read by the on-device installer, deploy_plugin on the LAN fallback gateway, shell fallbacks, the gateway's /pkg/ and the upload inbox | 2026-11-03 |
+| [Plugin deploy pipeline](architecture/deploy-pipeline.md) | how a plugin directory gets onto a Kindle: the GitHub registry (registry/index.json and Releases) read by the on-device installer, deploy_plugin on the LAN fallback gateway, shell fallbacks, the gateway's /pkg/ and the upload inbox | 2026-11-04 |
 | [Device bridge (agent to Kindle)](architecture/device-bridge.md) | how an agent call reaches a Kindle, which files own the gateway tools on Cloudflare and on the LAN fallback, the stateless MCP transport, the dial-out connection (WebSocket with a device key, or raw TCP) and live sessions, screenshots, diagnostics and running on Android | 2026-11-03 |
 | [Plugin installer](architecture/plugin-installer.md) | where the on-device plugin installer reads the package list, downloads and checks an archive, swaps the plugin folder, keeps the backup and rolls back | 2026-11-03 |
 | [Synced reading list plugin](architecture/synced-reading-list.md) | where the synced reading list sets the progress sync device id from the Kindle serial, fetches the server list, maps books to local files under any of their merged file names, builds rows, filters and searches, refreshes, shows the long-press pop-up, removes a book from the list, chooses which progress sync plugin it works with, and opens a book at its synced position | 2026-11-03 |
@@ -54,7 +54,7 @@ Simply true, and expensive to re-derive.
 | [Gateway configuration](reference/configuration.md) | environment variables read by the gateway container and where they are set | 2026-10-31 |
 | [Kindle power daemon (powerd) properties and sleep timers](reference/kindle-powerd.md) | what com.lab126.powerd exposes on a Paperwhite 3 for delaying suspend, and the timers between the power button and sleep | 2026-11-03 |
 | [Kindle SSH access and ports](reference/kindle-ssh-access.md) | the two SSH servers on a jailbroken Paperwhite 3, which survives a KOReader restart, and which ports matter | 2026-10-28 |
-| [Moving a Kindle to the Cloudflare gateway](reference/move-kindle-to-cloudflare-gateway.md) | give a Kindle a koreader_mcp that speaks WebSocket, point it at wss://kindle.kenluu.org/device with the device key, install plugins from the GitHub registry, connect an agent, and when the home server's LAN gateway can be retired | 2026-11-03 |
+| [Moving a Kindle to the Cloudflare gateway](reference/move-kindle-to-cloudflare-gateway.md) | give a Kindle a koreader_mcp that speaks WebSocket, point it at wss://kindle.kenluu.org/device with the device key, install plugins from the GitHub registry, connect an agent, and when the home server's LAN gateway can be retired | 2026-11-04 |
 | [Installing progress sync serverless on a Kindle](reference/progress-sync-serverless-install.md) | install the serverless progress sync and synced reading list packages through Plugin packages, turn off the built-in Progress sync, log in, and where each setting is stored | 2026-11-03 |
 
 ## Decisions

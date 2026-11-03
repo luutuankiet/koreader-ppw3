@@ -1,7 +1,7 @@
 ---
 title: Plugin deploy pipeline
 covers: how a plugin directory gets onto a Kindle: the GitHub registry (registry/index.json and Releases) read by the on-device installer, deploy_plugin on the LAN fallback gateway, shell fallbacks, the gateway's /pkg/ and the upload inbox
-verified: 2026-11-03
+verified: 2026-11-04
 ---
 
 # Plugin deploy pipeline
@@ -15,7 +15,7 @@ The gateway on Cloudflare (`kindle-gateway-worker/`) has no `deploy_plugin`: it 
 3. Commit `registry/index.json` and merge it to `main`. Devices read the manifest from `main`, so nothing is offered until the merge.
 4. On the device: Tools, Plugin packages, tap the plugin, Install, then restart KOReader.
 
-`registry/index.json` lists `pluginpackages` and `syncedhistory` today. `koreader_mcp` and `kosyncserverless` are not in it, so on a device connected to the Cloudflare gateway they can only be updated by publishing them first, over SSH (`scripts/deploy-to-kindle.sh`), or over USB.
+Every plugin in this workspace, `rssreader` included, is published to `registry/index.json`. A plugin changed in a checkout reaches a device on the Cloudflare gateway only once it is published again with a new version in `_meta.lua`; `publish.sh` refuses to replace an archive of the same version whose content changed unless given `--force`.
 
 ## deploy_plugin on the LAN fallback
 
