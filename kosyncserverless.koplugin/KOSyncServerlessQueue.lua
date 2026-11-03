@@ -6,11 +6,13 @@ local QUEUE_PATH = DataStorage:getSettingsDir() .. "/kosyncserverless_queue.lua"
 local MAX_AGE = 28 * 24 * 3600 -- 4 weeks in seconds
 local MAX_ENTRIES = 200 -- paranoia cap
 
-local KOSyncServerlessQueue = {}
+local KOSyncServerlessQueue = {
+    path = QUEUE_PATH, -- tests point this at a temporary file
+}
 
 function KOSyncServerlessQueue:_storage()
-    if not self._persist then
-        self._persist = Persist:new{ path = QUEUE_PATH, codec = "dump" }
+    if not self._persist or self._persist.path ~= self.path then
+        self._persist = Persist:new{ path = self.path, codec = "dump" }
     end
     return self._persist
 end
@@ -64,35 +66,62 @@ function KOSyncServerlessQueue:push(item)
     logger.dbg("KOSyncServerlessQueue: queued progress for", item.document, "total:", #filtered)
 end
 
---- Attempt to send all queued items in order.
--- @param send_func function(item) -> bool: sends one item, returns true on success
--- @return number of successfully sent items
-function KOSyncServerlessQueue:drain(send_func)
+-- Removes one entry, matched by document and queued_at, re-reading the file
+-- so entries queued while a send was in flight are kept.
+function KOSyncServerlessQueue:remove(item)
     local queue = self:load()
-    if #queue == 0 then return 0 end
-
-    logger.info("KOSyncServerlessQueue: draining", #queue, "queued items")
-    local sent = 0
-
-    for i, item in ipairs(queue) do
-        if send_func(item) then
-            sent = sent + 1
-        else
-            -- Server still unreachable, keep remaining items
-            local remaining = {}
-            for j = i, #queue do
-                table.insert(remaining, queue[j])
-            end
-            self:save(remaining)
-            logger.info("KOSyncServerlessQueue: sent", sent, ", remaining", #remaining)
-            return sent
+    for i, entry in ipairs(queue) do
+        if entry.document == item.document and entry.queued_at == item.queued_at then
+            table.remove(queue, i)
+            self:save(queue)
+            return true
         end
     end
+    return false
+end
 
-    -- All sent
-    self:save({})
-    logger.info("KOSyncServerlessQueue: sent all", sent, "items")
-    return sent
+--- Send queued items one at a time, oldest first. An entry leaves the queue
+-- only after send reports a confirmed success; the first failure stops the
+-- drain and keeps that entry and every later one.
+-- @param send function(item, cb): sends one item, then calls cb(ok) once
+-- @param done optional function(sent, remaining)
+-- @treturn bool false when a drain is already running (done is not called)
+function KOSyncServerlessQueue:drainAsync(send, done)
+    if self._draining then return false end
+    local pending = self:load()
+    if #pending == 0 then
+        if done then done(0, 0) end
+        return true
+    end
+    self._draining = true
+    logger.info("KOSyncServerlessQueue: draining", #pending, "queued items")
+    local sent = 0
+    local i = 0
+    local next_item
+    next_item = function()
+        i = i + 1
+        local item = pending[i]
+        if not item then
+            self._draining = nil
+            logger.info("KOSyncServerlessQueue: sent all", sent, "items")
+            if done then done(sent, self:count()) end
+            return
+        end
+        send(item, function(ok)
+            if ok then
+                self:remove(item)
+                sent = sent + 1
+                next_item()
+            else
+                self._draining = nil
+                local remaining = self:count()
+                logger.info("KOSyncServerlessQueue: sent", sent, ", remaining", remaining)
+                if done then done(sent, remaining) end
+            end
+        end)
+    end
+    next_item()
+    return true
 end
 
 function KOSyncServerlessQueue:count()

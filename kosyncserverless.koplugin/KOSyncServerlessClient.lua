@@ -1,181 +1,189 @@
-local UIManager = require("ui/uimanager")
-local logger = require("logger")
-local socketutil = require("socketutil")
+--[[--
+Progress sync client that tolerates a sleeping server.
 
--- Push/Pull
-local PROGRESS_TIMEOUTS = { 2,  5 }
--- Login/Register
-local AUTH_TIMEOUTS     = { 5, 10 }
+Every request runs in a forked subprocess (kosyncserverless_http), so the UI
+stays responsive while a cold server boots, and is retried by
+kosyncserverless_retry (15 s per attempt, 3 attempts, 2 s then 5 s apart).
+Same endpoints and headers as the built-in plugin's api.json.
+
+Each call returns a handle: handle.cancel() abandons the request and makes
+the callback fire right away with ok = false and res.err == "cancelled". The
+callback fires exactly once either way.
+
+    local client = KOSyncServerlessClient:new{ custom_url = url, username = u, userkey = k }
+    local handle = client:push(item, function(ok, res) end)
+    client:pull(digest, function(ok, body, res) end)
+
+Tests inject request, scheduleIn and clock.
+]]
+
+local Retry = require("kosyncserverless_retry")
+
+local DEFAULT_URL = "https://sync.koreader.rocks:443"
+local ACCEPT = "application/vnd.koreader.v1+json"
 
 local KOSyncServerlessClient = {
-    service_spec = nil,
     custom_url = nil,
+    username = nil,
+    userkey = nil,
 }
 
+-- Shared by every client in this KOReader process: when the server last
+-- answered anything (any HTTP status), on the clock below. Drives the
+-- warm-up ping skip window.
+KOSyncServerlessClient.last_reached = nil
+
 function KOSyncServerlessClient:new(o)
-    if o == nil then o = {} end
+    o = o or {}
     setmetatable(o, self)
     self.__index = self
-    if o.init then o:init() end
+    o:init()
     return o
 end
 
 function KOSyncServerlessClient:init()
-    local Spore = require("Spore")
-    self.client = Spore.new_from_spec(self.service_spec, {
-        base_url = self.custom_url,
-    })
-    package.loaded["Spore.Middleware.KOSyncServerlessGinClient"] = {}
-    require("Spore.Middleware.KOSyncServerlessGinClient").call = function(_, req)
-        req.headers["accept"] = "application/vnd.koreader.v1+json"
+    if not self.scheduleIn then
+        local UIManager = require("ui/uimanager")
+        self.scheduleIn = function(s, f) UIManager:scheduleIn(s, f) end
     end
-    package.loaded["Spore.Middleware.KOSyncServerlessAuth"] = {}
-    require("Spore.Middleware.KOSyncServerlessAuth").call = function(args, req)
-        req.headers["x-auth-user"] = args.username
-        req.headers["x-auth-key"] = args.userkey
+    if not self.clock then
+        self.clock = require("socket").gettime
     end
-    package.loaded["Spore.Middleware.KOSyncServerlessAsyncHTTP"] = {}
-    require("Spore.Middleware.KOSyncServerlessAsyncHTTP").call = function(args, req)
-        -- disable async http if Turbo looper is missing
-        if not UIManager.looper then return end
-        req:finalize()
-        local result
-        require("httpclient"):new():request({
-            url = req.url,
-            method = req.method,
-            body = req.env.spore.payload,
-            on_headers = function(headers)
-                for header, value in pairs(req.headers) do
-                    if type(header) == "string" then
-                        headers:add(header, value)
-                    end
-                end
-            end,
-        }, function(res)
-            result = res
-            -- Turbo HTTP client uses code instead of status
-            -- change to status so that Spore can understand
-            result.status = res.code
-            coroutine.resume(args.thread)
-        end)
-        return coroutine.create(function() coroutine.yield(result) end)
+    if not self.request then
+        self.request = require("kosyncserverless_http").new{
+            scheduleIn = self.scheduleIn,
+            log = require("logger"),
+        }
     end
+    local json = self.json or require("json")
+    self.json_encode = self.json_encode or json.encode
+    self.json_decode = self.json_decode or json.decode
+    self.base_url = (self.custom_url and self.custom_url ~= "" and self.custom_url or DEFAULT_URL):gsub("/+$", "")
 end
 
-function KOSyncServerlessClient:register(username, password)
-    self.client:reset_middlewares()
-    self.client:enable("Format.JSON")
-    self.client:enable("KOSyncServerlessGinClient")
-    socketutil:set_timeout(AUTH_TIMEOUTS[1], AUTH_TIMEOUTS[2])
-    local ok, res = pcall(function()
-        return self.client:register({
-            username = username,
-            password = password,
-        })
-    end)
-    socketutil:reset_timeout()
-    if ok then
-        return res.status == 201, res.body
-    else
-        logger.dbg("KOSyncServerlessClient:register failure:", res)
-        return false, res.body
+function KOSyncServerlessClient:headers(with_auth, username, userkey)
+    local h = { accept = ACCEPT }
+    if with_auth then
+        h["x-auth-user"] = username or self.username
+        h["x-auth-key"] = userkey or self.userkey
     end
+    return h
 end
 
-function KOSyncServerlessClient:authorize(username, password)
-    self.client:reset_middlewares()
-    self.client:enable("Format.JSON")
-    self.client:enable("KOSyncServerlessGinClient")
-    self.client:enable("KOSyncServerlessAuth", {
-        username = username,
-        userkey = password,
-    })
-    socketutil:set_timeout(AUTH_TIMEOUTS[1], AUTH_TIMEOUTS[2])
-    local ok, res = pcall(function()
-        return self.client:authorize()
-    end)
-    socketutil:reset_timeout()
-    if ok then
-        return res.status == 200, res.body
-    else
-        logger.dbg("KOSyncServerlessClient:authorize failure:", res)
-        return false, res.body
+function KOSyncServerlessClient:decode(res)
+    if not res or not res.body or res.body == "" then return nil end
+    local ok, value = pcall(self.json_decode, res.body)
+    if ok and type(value) == "table" then return value end
+    return nil
+end
+
+--- Seconds since the server last answered, or nil if never in this process.
+function KOSyncServerlessClient:sinceReached()
+    local t = KOSyncServerlessClient.last_reached
+    if not t then return nil end
+    return self.clock() - t
+end
+
+--- Low level: method, path, body table or nil, auth, success test, callback.
+-- @treturn table retry handle { cancel = fn }
+function KOSyncServerlessClient:call(spec, cb)
+    local headers = self:headers(spec.auth, spec.username, spec.userkey)
+    local body
+    if spec.body then
+        body = self.json_encode(spec.body)
+        headers["content-type"] = "application/json"
     end
+    return Retry.run{
+        request = self.request,
+        scheduleIn = self.scheduleIn,
+        max_attempts = spec.max_attempts,
+        req = { method = spec.method, url = self.base_url .. spec.path, headers = headers, body = body },
+        is_success = spec.is_success,
+        on_attempt = spec.on_attempt,
+        on_response = function()
+            KOSyncServerlessClient.last_reached = self.clock()
+        end,
+        done = function(ok, res, attempts)
+            res.attempts = attempts
+            cb(ok, res)
+        end,
+    }
 end
 
-function KOSyncServerlessClient:update_progress(
-        username,
-        password,
-        document,
-        metadata,
-        progress,
-        percentage,
-        device,
-        device_id,
-        callback)
-    self.client:reset_middlewares()
-    self.client:enable("Format.JSON")
-    self.client:enable("KOSyncServerlessGinClient")
-    self.client:enable("KOSyncServerlessAuth", {
-        username = username,
-        userkey = password,
-    })
-    -- Set *very* tight timeouts to avoid blocking for too long...
-    socketutil:set_timeout(PROGRESS_TIMEOUTS[1], PROGRESS_TIMEOUTS[2])
-    local co = coroutine.create(function()
-        local ok, res = pcall(function()
-            return self.client:update_progress({
-                document = document,
-                metadata = metadata,
-                progress = tostring(progress),
-                percentage = percentage,
-                device = device,
-                device_id = device_id,
-            })
-        end)
-        if ok then
-            callback(res.status == 200, res.status, res.body)
-        else
-            logger.dbg("KOSyncServerlessClient:update_progress failure:", res)
-            callback(false, nil, nil)
-        end
-    end)
-    self.client:enable("KOSyncServerlessAsyncHTTP", {thread = co})
-    coroutine.resume(co)
-    if UIManager.looper then UIManager:setInputTimeout() end
-    socketutil:reset_timeout()
+--- Push one progress record. cb(ok, res): ok only on a 2xx answer;
+-- res.status is nil after a transport failure, 401 on bad credentials.
+-- opts.on_attempt(n) is called before each attempt.
+function KOSyncServerlessClient:push(item, cb, opts)
+    opts = opts or {}
+    return self:call({
+        method = "PUT", path = "/syncs/progress", auth = true,
+        body = {
+            document = item.document,
+            metadata = item.metadata,
+            progress = tostring(item.progress),
+            percentage = item.percentage,
+            device = item.device,
+            device_id = item.device_id,
+        },
+        on_attempt = opts.on_attempt,
+    }, cb)
 end
 
-function KOSyncServerlessClient:get_progress(
-        username,
-        password,
-        document,
-        callback)
-    self.client:reset_middlewares()
-    self.client:enable("Format.JSON")
-    self.client:enable("KOSyncServerlessGinClient")
-    self.client:enable("KOSyncServerlessAuth", {
-        username = username,
-        userkey = password,
-    })
-    socketutil:set_timeout(PROGRESS_TIMEOUTS[1], PROGRESS_TIMEOUTS[2])
-    local co = coroutine.create(function()
-        local ok, res = pcall(function()
-            return self.client:get_progress({
-                document = document,
-            })
-        end)
-        if ok then
-            callback(res.status == 200, res.body)
-        else
-            logger.dbg("KOSyncServerlessClient:get_progress failure:", res)
-            callback(false, res.body)
-        end
+--- Pull the progress of one document. cb(ok, body, res); body is the decoded
+-- record (empty table when the server has none).
+function KOSyncServerlessClient:pull(document, cb, opts)
+    opts = opts or {}
+    return self:call({
+        method = "GET", path = "/syncs/progress/" .. tostring(document), auth = true,
+        on_attempt = opts.on_attempt,
+    }, function(ok, res)
+        cb(ok, self:decode(res), res)
     end)
-    self.client:enable("KOSyncServerlessAsyncHTTP", {thread = co})
-    coroutine.resume(co)
-    if UIManager.looper then UIManager:setInputTimeout() end
-    socketutil:reset_timeout()
+end
+
+--- cb(ok, body, res); ok on 200.
+function KOSyncServerlessClient:authorize(username, userkey, cb, opts)
+    opts = opts or {}
+    return self:call({
+        method = "GET", path = "/users/auth", auth = true, username = username, userkey = userkey,
+        is_success = function(res) return res.status == 200 end,
+        on_attempt = opts.on_attempt,
+    }, function(ok, res)
+        cb(ok, self:decode(res), res)
+    end)
+end
+
+--- cb(ok, body, res); ok on 201.
+function KOSyncServerlessClient:register(username, userkey, cb, opts)
+    opts = opts or {}
+    return self:call({
+        method = "POST", path = "/users/create",
+        body = { username = username, password = userkey },
+        is_success = function(res) return res.status == 201 end,
+        on_attempt = opts.on_attempt,
+    }, function(ok, res)
+        cb(ok, self:decode(res), res)
+    end)
+end
+
+--- Fire-and-forget warm-up: one GET /healthcheck, no retries, so a sleeping
+-- server starts booting before the real request. Skipped when the server
+-- answered within Retry.PING_SKIP_S.
+-- @treturn bool whether a ping was sent
+function KOSyncServerlessClient:ping(cb)
+    local since = self:sinceReached()
+    if (since and since < Retry.PING_SKIP_S) or KOSyncServerlessClient.ping_in_flight then
+        return false
+    end
+    KOSyncServerlessClient.ping_in_flight = true
+    self:call({
+        method = "GET", path = "/healthcheck", max_attempts = 1,
+        is_success = function(res) return res.status ~= nil end,
+    }, function(ok, res)
+        KOSyncServerlessClient.ping_in_flight = nil
+        if cb then cb(ok, res) end
+    end)
+    return true
 end
 
 return KOSyncServerlessClient

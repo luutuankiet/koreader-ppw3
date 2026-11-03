@@ -54,7 +54,8 @@ local SOURCES = {
     "KOSyncServerlessClient.lua",
     "KOSyncServerlessQueue.lua",
     "kosyncserverless_carryover.lua",
-    "api.json",
+    "kosyncserverless_http.lua",
+    "kosyncserverless_retry.lua",
 }
 
 local src = {}
@@ -163,7 +164,7 @@ for _, ev in ipairs{ "KOSyncServerlessPushProgress", "KOSyncServerlessPullProgre
     has("handler on" .. ev, "function KOSyncServerless:on" .. ev .. "(")
 end
 has("_meta name", 'name = "kosyncserverless",', "_meta.lua")
-has("_meta version 0.1.0", 'version = "0.1.0",', "_meta.lua")
+has("_meta version 0.2.0", 'version = "0.2.0",', "_meta.lua")
 has("coexistence check on ui.kosync", "not self.ui.kosync")
 
 -- 2. Login carry-over.
@@ -265,7 +266,7 @@ if mode == "koreader" then
     check("koreader: marker on disk", reread:isTrue(CarryOver.MARKER_KEY))
     check("koreader: reopened file copies nothing", CarryOver.apply(reread, LuaSettings:open(legacy_path)) == false)
 
-    -- Load smoke test: the modules resolve and the client parses api.json.
+    -- Load smoke test: the modules resolve and the client builds its URLs.
     -- KOReader's device module reads the global reader settings on load; give
     -- it a throwaway one so the real settings are never touched.
     G_reader_settings = G_reader_settings or LuaSettings:open(dir .. "/settings.reader.lua") -- luacheck: ignore
@@ -273,12 +274,11 @@ if mode == "koreader" then
     check("koreader: require KOSyncServerlessClient", ok_c and type(Client) == "table", Client)
     if ok_c then
         local ok_n, client = pcall(function()
-            return Client:new{ custom_url = "http://127.0.0.1:1/", service_spec = this_dir .. "/api.json" }
+            return Client:new{ custom_url = "http://127.0.0.1:1/", scheduleIn = function() end }
         end)
-        check("koreader: client built from api.json", ok_n and client and client.client ~= nil, client)
-        check("koreader: own middleware registered",
-            package.loaded["Spore.Middleware.KOSyncServerlessGinClient"] ~= nil
-            and package.loaded["Spore.Middleware.GinClient"] == nil)
+        check("koreader: client built", ok_n and client and client.base_url == "http://127.0.0.1:1", client)
+        check("koreader: no Spore middleware registered",
+            package.loaded["Spore.Middleware.GinClient"] == nil)
     end
     local ok_q, Queue = pcall(require, "KOSyncServerlessQueue")
     check("koreader: require KOSyncServerlessQueue", ok_q and type(Queue.push) == "function", Queue)
