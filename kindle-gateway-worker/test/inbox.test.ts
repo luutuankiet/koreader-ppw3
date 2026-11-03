@@ -1,6 +1,6 @@
 import { SELF, env } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { diagnosticsTools, listBundles, type ToolResult } from '../src/diagnostics-tools';
+import { listBundles, listDiagnostics, readDiagnostics, type ToolResult } from '../src/diagnostics-tools';
 import { INBOX_MAX_BYTES } from '../src/inbox';
 // Bundles built like the device builds them, and what kindle-gateway's list_diagnostics and
 // read_diagnostics answered for them (captured from that implementation, images summarised).
@@ -170,7 +170,11 @@ describe('PUT /inbox/<device>/<file>', () => {
 describe('list_diagnostics and read_diagnostics on R2', () => {
   type Case = { tool: string; args: Record<string, unknown>; result: { isError: boolean; content: Array<Record<string, unknown>> } };
   const cases = golden.cases as Case[];
-  const tool = (name: string) => diagnosticsTools.find((t) => t.name === name)!;
+  // The functions behind the tools; mcp.test.ts checks they are registered on /mcp.
+  const handlers: Record<string, (bucket: R2Bucket, args: never) => Promise<ToolResult>> = {
+    list_diagnostics: listDiagnostics,
+    read_diagnostics: readDiagnostics,
+  };
   const received = new Map<string, string>();
 
   beforeAll(async () => {
@@ -197,14 +201,14 @@ describe('list_diagnostics and read_diagnostics on R2', () => {
 
   for (const c of cases) {
     it(`${c.tool} ${JSON.stringify(c.args)} answers what kindle-gateway answers`, async () => {
-      const r: ToolResult = await tool(c.tool).handler(env.INBOX, c.args);
+      const r: ToolResult = await handlers[c.tool](env.INBOX, c.args as never);
       const summary = { isError: r.isError ?? false, content: r.content.map((b) => (b.type === 'image' ? { type: 'image' } : b)) };
       expect(summary).toEqual(expected(c));
     });
   }
 
   it('sends the screenshot as the PNG from the bundle', async () => {
-    const r = await tool('read_diagnostics').handler(env.INBOX, { device: 'kindle-1' });
+    const r = await readDiagnostics(env.INBOX, { device: 'kindle-1' });
     const img = r.content[1] as { type: 'image'; data: string; mimeType: string };
     expect(img.mimeType).toBe('image/png');
     expect(Array.from(fromBase64(img.data).subarray(0, 4))).toEqual([0x89, 0x50, 0x4e, 0x47]);
@@ -212,14 +216,8 @@ describe('list_diagnostics and read_diagnostics on R2', () => {
 
   it('reports a damaged bundle as a tool error', async () => {
     await env.INBOX.put('inbox/broken/20261101-000000.tar.gz', 'not gzip at all');
-    const r = await tool('read_diagnostics').handler(env.INBOX, { device: 'broken' });
+    const r = await readDiagnostics(env.INBOX, { device: 'broken' });
     expect(r.isError).toBe(true);
     expect((r.content[0] as { text: string }).text).toMatch(/^Error: Diagnostics: /);
-  });
-
-  it('copies the tool names, descriptions and inputs from kindle-gateway', () => {
-    expect(diagnosticsTools.map((t) => t.name)).toEqual(['list_diagnostics', 'read_diagnostics']);
-    expect(tool('read_diagnostics').inputSchema.required).toEqual(['device']);
-    expect(tool('list_diagnostics').inputSchema.required).toBeUndefined();
   });
 });

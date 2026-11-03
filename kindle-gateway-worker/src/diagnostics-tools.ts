@@ -1,25 +1,21 @@
+import type { McpServer } from '@modelcontextprotocol/server';
+import { z } from 'zod';
 import {
   BUNDLE_RE, BundleInfo, DEVICE_RE, MAX_UNPACKED_BYTES, bundleText, newestFirst, noBundleMessage, parseTar,
 } from '../../kindle-gateway/src/bundle-format';
 import { inboxKey } from './inbox';
+import type { ToolContext } from './mcp';
 
 // list_diagnostics and read_diagnostics over the R2 inbox: same names, descriptions, inputs and
 // answers as kindle-gateway's gateway-server.ts, which reads the same bundles from a folder.
 // One difference: the screenshot comes back as the device's PNG, where kindle-gateway shrinks
 // it to a half-size JPEG with sharp, which does not run in a Worker.
 //
-// These are plain functions over an R2 bucket; the MCP endpoint registers them with
-// `diagnosticsTools` (name, description, JSON Schema input, handler).
+// listDiagnostics and readDiagnostics are plain functions over an R2 bucket; diagnosticsTools
+// registers them on the MCP server with the bucket from ToolContext.inbox.
 
 export type ContentBlock = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
 export type ToolResult = { content: ContentBlock[]; isError?: boolean };
-
-export interface DiagnosticsTool {
-  name: string;
-  description: string;
-  inputSchema: { type: 'object'; properties: Record<string, { type: 'string'; description: string }>; required?: string[] };
-  handler: (bucket: R2Bucket, args: Record<string, unknown>) => Promise<ToolResult>;
-}
 
 /** Newest first, optionally for one device. An unknown device is an empty list. */
 export async function listBundles(bucket: R2Bucket, device?: string): Promise<BundleInfo[]> {
@@ -90,8 +86,6 @@ async function diagnosticsResult(read: () => Promise<ToolResult>): Promise<ToolR
   }
 }
 
-const optionalString = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
-
 export async function listDiagnostics(bucket: R2Bucket, args: { device?: string }): Promise<ToolResult> {
   return diagnosticsResult(async () => ({
     content: [{ type: 'text', text: JSON.stringify(await listBundles(bucket, args.device), null, 2) }],
@@ -108,27 +102,18 @@ export async function readDiagnostics(bucket: R2Bucket, args: { device: string; 
   });
 }
 
-export const diagnosticsTools: DiagnosticsTool[] = [
-  {
-    name: 'list_diagnostics',
+/** The diagnostics tool group for /mcp (listed in `toolSets` in mcp.ts). */
+export function diagnosticsTools(server: McpServer, ctx: ToolContext): void {
+  server.registerTool('list_diagnostics', {
     description: 'List diagnostics bundles devices have uploaded, newest first. Works while the device is asleep or offline.',
-    inputSchema: {
-      type: 'object',
-      properties: { device: { type: 'string', description: 'Device name; omit for all devices' } },
-    },
-    handler: (bucket, args) => listDiagnostics(bucket, { device: optionalString(args.device) }),
-  },
-  {
-    name: 'read_diagnostics',
+    inputSchema: z.object({ device: z.string().optional().describe('Device name; omit for all devices') }),
+  }, async (args: { device?: string }) => listDiagnostics(ctx.inbox, args));
+
+  server.registerTool('read_diagnostics', {
     description: 'Read one diagnostics bundle: versions, the crash.log lines new since the previous send, the top window snapshot and the screenshot. Works while the device is asleep or offline.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        device: { type: 'string', description: 'Device name' },
-        file: { type: 'string', description: 'Bundle file name from list_diagnostics; omit for the newest' },
-      },
-      required: ['device'],
-    },
-    handler: (bucket, args) => readDiagnostics(bucket, { device: String(args.device ?? ''), file: optionalString(args.file) }),
-  },
-];
+    inputSchema: z.object({
+      device: z.string().describe('Device name'),
+      file: z.string().optional().describe('Bundle file name from list_diagnostics; omit for the newest'),
+    }),
+  }, async (args: { device: string; file?: string }) => readDiagnostics(ctx.inbox, args));
+}

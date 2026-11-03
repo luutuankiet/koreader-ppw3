@@ -2,6 +2,7 @@ import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
 import type { SnapshotTracker } from '../../kindle-gateway/src/ui-snapshot';
 import type { DeviceReply, DeviceSummary } from './hub';
 import type { EncodedImage } from './screenshot';
+import { diagnosticsTools } from './diagnostics-tools';
 import { registerDeviceTools } from './tools/device-tools';
 
 /**
@@ -20,6 +21,8 @@ export interface ToolContext {
   einkDelayMs: number;
   /** Wait for the device to come back after restart_koreader. */
   reconnectTimeoutMs: number;
+  /** The R2 bucket diagnostics bundles are uploaded to (see inbox.ts). */
+  inbox: R2Bucket;
 }
 
 /**
@@ -28,6 +31,7 @@ export interface ToolContext {
  */
 export const toolSets: Array<(server: McpServer, ctx: ToolContext) => void> = [
   registerDeviceTools,
+  diagnosticsTools,
 ];
 
 export function createMcpServer(ctx: ToolContext): McpServer {

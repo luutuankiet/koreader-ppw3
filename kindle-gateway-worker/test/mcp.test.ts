@@ -6,7 +6,7 @@ import {
   PROTOCOL_VERSION_META_KEY,
   StreamableHTTPClientTransport,
 } from '@modelcontextprotocol/client';
-import { SELF } from 'cloudflare:test';
+import { SELF, env } from 'cloudflare:test';
 import { afterEach, describe, expect, it } from 'vitest';
 import { bytesToBase64 } from '../src/screenshot';
 
@@ -15,10 +15,10 @@ const AGENT_KEY = 'test-agent-key';
 const MCP_URL = 'https://gw.test/mcp';
 
 /** The tools the Node gateway serves (kindle-gateway/src/gateway-server.ts), minus deploy_plugin
- *  (devices install from the registry) and the diagnostics tools (their own tool group). */
+ *  (devices install from the registry). */
 const EXPECTED_TOOLS = [
   'action', 'close_top_widget', 'device_status', 'get_current_view', 'get_menu_items', 'go_back',
-  'hold', 'list_devices', 'read_files', 'restart_koreader', 'run_command', 'screenshot',
+  'hold', 'list_devices', 'list_diagnostics', 'read_diagnostics', 'read_files', 'restart_koreader', 'run_command', 'screenshot',
   'select_menu_item', 'send_event', 'snapshot', 'tap', 'tap_text', 'type',
 ].sort();
 
@@ -265,6 +265,27 @@ describe('stateless MCP, both protocol versions', () => {
     const tap = tools.find((t) => t.name === 'tap')!;
     expect(tap.inputSchema.required).toEqual(expect.arrayContaining(['device', 'ref']));
     expect(Object.keys(tap.inputSchema.properties ?? {}).sort()).toEqual(['device', 'max_lines', 'ref', 'screenshot']);
+  });
+
+  it('serves the diagnostics tools from the R2 inbox', async () => {
+    await env.INBOX.put('inbox/mcp-test/20261101-000000.tar.gz', 'not gzip');
+    const client = await mcpClient(true);
+    const list = await call(client, 'list_diagnostics', { device: 'mcp-test' });
+    expect(JSON.parse(list.content[0].text!)).toEqual([expect.objectContaining({ device: 'mcp-test', file: '20261101-000000.tar.gz' })]);
+    const read = await call(client, 'read_diagnostics', { device: 'mcp-test' });
+    expect(read.isError).toBe(true);
+    expect(read.content[0].text).toMatch(/^Error: Diagnostics: /);
+  });
+
+  it('keeps the diagnostics schemas: read needs device, list needs nothing', async () => {
+    const client = await mcpClient(false);
+    const { tools } = await client.listTools();
+    const read = tools.find((t) => t.name === 'read_diagnostics')!;
+    const list = tools.find((t) => t.name === 'list_diagnostics')!;
+    expect(read.inputSchema.required).toEqual(['device']);
+    expect(Object.keys(read.inputSchema.properties ?? {}).sort()).toEqual(['device', 'file']);
+    expect(list.inputSchema.required ?? []).toEqual([]);
+    expect(Object.keys(list.inputSchema.properties ?? {})).toEqual(['device']);
   });
 });
 
