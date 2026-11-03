@@ -1,7 +1,7 @@
 ---
 title: Device bridge (agent to Kindle)
 covers: how an agent call reaches a Kindle, which file owns the gateway tools, the stateless MCP transport, the dial-out connection and live sessions, screenshots and running on Android
-verified: 2026-10-31
+verified: 2026-11-03
 ---
 
 # Device bridge
@@ -22,7 +22,7 @@ Newline-delimited JSON. The device sends a hello (`name`, `id_hash`, versions); 
 
 - A name is refused only while a different `id_hash` holds it on an open connection. The same hash replaces the old connection, which covers a reconnect the gateway has not noticed yet.
 - `id_hash` is the first 12 hex digits of a SHA-256 of the serial; the serial itself never leaves the device, only its last 4 characters in the default name `pw3-XXXX`.
-- A session starts from the menu (Agent bridge, Live mode) and ends on 15 minutes without an agent command, battery below 30%, the menu, or failing to reconnect after 5 s, 15 s and 60 s. `session_open` in `<settings>/koreader_mcp.lua` resumes a session after a kill. `live_mode = "always"` in the plugin's `config.lua` starts the session at boot, never ends it and retries every 60 s; the emulator and both Kindles run this way, so nobody toggles live mode to develop. With live mode off nothing dials out and the agent cannot reach the device at all.
+- A session starts from the menu (Agent bridge, Live mode) and ends on 15 minutes without an agent command, battery below 30%, the menu, or failing to reconnect after 5 s, 15 s and 60 s. `session_open` in `<settings>/koreader_mcp.lua` resumes a session after a kill. `live_mode = "always"` in the plugin's `config.lua` starts the session at boot, never ends it and retries every 60 s, unless Live mode was turned off in the menu, which saves `live_off` in `<settings>/koreader_mcp.lua` and holds across restarts until it is turned back on; the emulator and both Kindles run this way, so nobody toggles live mode to develop. With live mode off nothing dials out and the agent cannot reach the device at all.
 - During a session on a Kindle: `preventScreenSaver` is held and KOReader's WiFi auto-off check is paused; both are put back at the end. This does the Keep alive plugin's job, so it is not needed (and a hold it set is left alone); the cost is that a Kindle in `always` mode never sleeps by itself. The socket is checked every 0.2 s within 10 s of an agent command, else every 2 s.
 - The socket is `FD_CLOEXEC`: otherwise the detached restart shell inherits it and the gateway never sees the device go.
 - Connecting blocks the UI for up to 5 s per attempt; accepted because it only happens during a session.
