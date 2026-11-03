@@ -3,10 +3,10 @@
   "plugins": [
     {
       "name": "koreader_mcp",
-      "version": "0.3.1",
-      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/koreader_mcp-v0.3.1/koreader_mcp-0.3.1.tar.gz",
+      "version": "0.3.2",
+      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/koreader_mcp-v0.3.2/koreader_mcp-0.3.2.tar.gz",
       "size": 28086,
-      "sha256": "d533091f664d245ea30130ae24b59cc48daa6b769f16b41339319c521e2adc7d",
+      "sha256": "40bef70cb62056a390dcf3d8c051f3c9f121660a1f27815b7932410e5a4a83b3",
       "description": "Agent bridge for remote device management. While live mode is on, the device holds a connection to the gateway and answers file, command, status and UI calls over it. Send diagnostics uploads one bundle to the gateway inbox.",
       "fullname": "KOReader MCP Server"
     },
@@ -21,10 +21,10 @@
     },
     {
       "name": "pluginpackages",
-      "version": "0.2.0",
-      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/pluginpackages-v0.2.0/pluginpackages-0.2.0.tar.gz",
-      "size": 9555,
-      "sha256": "5bfca3e141b1590d9cce7f02f07fa825e692dea79f45df704c1afc3e00b2f65d",
+      "version": "0.2.1",
+      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/pluginpackages-v0.2.1/pluginpackages-0.2.1.tar.gz",
+      "size": 9600,
+      "sha256": "7eea0ca3535bea848574acb923a6661f2b2cab20d652490f62fbe769afd8c576",
       "description": "Install, upgrade and roll back plugins from a package host, including this one. Uses WiFi only when you open it.",
       "fullname": "Plugin packages"
     },
