@@ -197,4 +197,4 @@ curl -s -X POST -H 'X-API-Key: <key>' -H 'Content-Type: application/json' \
 
 ## License
 
-Private project.
+GNU Affero General Public License v3.0, the same license as KOReader. See [LICENSE](LICENSE).
