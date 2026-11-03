@@ -1,5 +1,8 @@
 import { DurableObject } from 'cloudflare:workers';
 import { isRpcResponse, validateHello } from '../../kindle-gateway/src/device-protocol';
+import { SnapshotTracker } from '../../kindle-gateway/src/ui-snapshot';
+import { createMcpFetch } from './mcp';
+import { resizeScreenshot } from './screenshot';
 
 /**
  * The device's 60 s heartbeat and its answer, matched byte for byte by the runtime
@@ -89,14 +92,20 @@ export class Hub extends DurableObject<Env> {
   /** Messages delivered to webSocketMessage since this instance started (tests use it to
    *  show that an auto-answered ping never woke the object). */
   handledMessages = 0;
+  /** Latest snapshot id per device for the stale-reference check, in memory as on the Node
+   *  gateway. Lost when the object hibernates, which is safe: the tracker passes through any
+   *  reference it cannot judge and the device refuses stale ones itself. */
+  private tracker = new SnapshotTracker();
+  private mcp?: (request: Request) => Promise<Response>;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(DEVICE_PING, DEVICE_PONG));
   }
 
-  /** The Worker forwards an authenticated `GET /device` upgrade here. */
+  /** The Worker forwards authenticated `/mcp` requests and `GET /device` upgrades here. */
   async fetch(request: Request): Promise<Response> {
+    if (new URL(request.url).pathname === '/mcp') return this.serveMcp(request);
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
       return new Response('expected a WebSocket upgrade', { status: 426 });
     }
@@ -113,7 +122,21 @@ export class Hub extends DurableObject<Env> {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  // ---- RPC API for the MCP tools (sub-issue 3) -------------------------------------------
+  /** MCP runs here, not in the Worker: the free Worker gets 10 ms of CPU per request. */
+  private serveMcp(request: Request): Promise<Response> {
+    this.mcp ??= createMcpFetch({
+      listDevices: () => this.listDevices(),
+      call: (d, m, p, t) => this.call(d, m, p, t),
+      waitForReconnect: (d, t, a) => this.waitForReconnect(d, t, a),
+      tracker: this.tracker,
+      resizeScreenshot,
+      einkDelayMs: Number(this.env.EINK_DELAY_MS),
+      reconnectTimeoutMs: DEFAULT_RECONNECT_TIMEOUT_MS,
+    });
+    return this.mcp(request);
+  }
+
+  // ---- device API used by the MCP tools --------------------------------------------------
 
   /** Devices whose hello was accepted and whose socket is still open. */
   async listDevices(): Promise<DeviceSummary[]> {

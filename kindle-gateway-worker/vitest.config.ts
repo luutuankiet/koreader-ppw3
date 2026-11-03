@@ -9,7 +9,7 @@ export default defineConfig({
         bindings: {
           DEVICE_KEY: 'test-device-key',
           AGENT_KEY: 'test-agent-key',
-          ENABLE_DEBUG_ROUTES: '1',
+          EINK_DELAY_MS: '0',
         },
       },
     }),
