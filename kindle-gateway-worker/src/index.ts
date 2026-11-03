@@ -1,4 +1,5 @@
 import { bearerMatches } from './auth';
+import { inboxRoute } from './inbox';
 
 export { Hub } from './hub';
 
@@ -21,6 +22,8 @@ const routes: Record<string, Handler> = {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const { pathname } = new URL(request.url);
+    // The one prefix route: the device and file name are part of the path.
+    if (pathname.startsWith('/inbox/')) return inboxRoute(request, env);
     const handler = routes[`${request.method} ${pathname}`];
     return handler ? handler(request, env) : new Response('not found', { status: 404 });
   },

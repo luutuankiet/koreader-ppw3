@@ -9,6 +9,8 @@
   "durable_objects": {
     "bindings": [{ "name": "HUB", "class_name": "Hub" }]
   },
+  // Diagnostics bundles devices upload, at inbox/<device>/<file>. `wrangler dev` keeps a local copy.
+  "r2_buckets": [{ "binding": "INBOX", "bucket_name": "kindle-gateway-inbox" }],
   // The free plan only offers SQLite-backed Durable Objects.
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Hub"] }]
   // Secrets, never in this file: DEVICE_KEY, AGENT_KEY (`wrangler secret put`, or .dev.vars locally).
