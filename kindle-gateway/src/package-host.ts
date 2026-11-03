@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import express, { Request, Response, Router } from 'express';
+import { BUNDLE_RE, DEFAULT_INBOX_MAX_BYTES, DEVICE_RE } from './bundle-format';
 
 // Package host for Kindles, which reach only the LAN and run no agent server:
 //   GET /pkg/<file>                       plugin archives and index.json, read-only,
@@ -15,8 +16,6 @@ export interface PackageHostOptions {
   inboxMaxBytes: number;
 }
 
-export const DEFAULT_INBOX_MAX_BYTES = 10 * 1024 * 1024;
-
 export function packageHostOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): PackageHostOptions {
   const max = parseInt(env.INBOX_MAX_BYTES || '', 10);
   return {
@@ -26,9 +25,8 @@ export function packageHostOptionsFromEnv(env: NodeJS.ProcessEnv = process.env):
   };
 }
 
-// One path segment each, so a name can never climb out of the inbox folder.
-export const DEVICE_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/;
-export const BUNDLE_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}\.tar\.gz$/;
+// The name rules live in bundle-format.ts, which kindle-gateway-worker shares.
+export { BUNDLE_RE, DEFAULT_INBOX_MAX_BYTES, DEVICE_RE } from './bundle-format';
 
 export function packageHostRouter(opts: PackageHostOptions): Router {
   const router = express.Router();

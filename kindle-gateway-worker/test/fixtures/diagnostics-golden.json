@@ -1,0 +1,196 @@
+{
+  "bundles": [
+    {
+      "device": "kindle-1",
+      "file": "20261031-090000.tar.gz",
+      "base64": "H4sIAAAAAAAAA+3VT0sCQRQA8LU6mCDRLTrJ3AKT2b/C3gojRbKQLhFhm465uc7IzqqBeOkQ9AWCvkS37n2P+gDe+gq9XSgxiS6tBr0frG92d2b/yL73Og53m0wGuSspuBIPCizLiCL4GuGkqaimltcMCsFSqEoN01AyNKbnmdKTgeNnMvO41V80JG3hM6fB/Fqf+dIVnNikr1HNytF8TiVZ0mB9t87gaNvlDY9tq2S06IdGv6buO7KV88RljPf4Mf9hPJX/NG8aOub/PEjudGVLLLT+a/pM/Tcp1v+5GJKPL4DYepYMoMaLART7A8Z7UPwDETgesbUs4aLBJLFPh8RnTZig18LmEPYE2LnoBQF0DpjPruFC5LAMY/hjg7BvkFF2skibLIrmfi4pMs8TU6vOsM/ET9Z9xnhUAbo8piYQ5b/xff6rs/lv6Rrm/zzcHVX206nNFAzTpWKhCjEZbskl+C13tl4hrHaLJ1JRlsfhlngaVttwcK1U2DlOPtTHz4mN2/sV5WW9mTDe8iy8aGmvUnjcPb9Z3GshhBBCCCGEEEIIIYQQQggh9C+9A7ukQ5wAKAAA",
+      "mtime": "2026-10-31T09:00:00.000Z"
+    },
+    {
+      "device": "emu",
+      "file": "20261031-100000.tar.gz",
+      "base64": "H4sIAAAAAAAAA+3WT0sCQRQA8LU6mCDRLTrJ3AKR2f/grTBSoj9Il4iwTcfaXGdkZ9RAvHQI+gJBX6Jb975HfQBvfYXeCiUa0aVdg94Pdp/uzuyOyz7fa3vcbzKpCldScC0eFDiONY5gNsJJqum24RoWheBoVKeW5Wo5GtN6pnSl8sJcLolb/UUD0hIh8xosrPVYKH3BSZH0DGo4BeoWdJInDdbz6wyOsnaXDOe9XvS76qEnLwuBuIjxHj/mv+5O5z91bdvE/E9C0w+lygQ+ZznVF5l5LwclTHKvIy/FXOu/Ydqz9d+mFuZ/Egbk4w0gRTNP+j5viD4U+z3Gu1D8lVBeQIpGnnDRYJIUTwYkZE0YYNai5qAF4+HLeVcp6BxgPLuGC5GDXfgMD1ZFfQMZ5ieTjMmk8djPKWUWBGJq1ik2G/GT9ZAxPv4H6PCYmoBx/lvf57/+Nf8d08D8T8Ld4f5ONrMeFf5spVyqQkxHW3oB9rvtjVcIy53ysdS0xVG0pZ4G1RYcXKmUNo/SD/XRc2rt9n5Je1ltpqw3l0UXrWzvlx63zm7m97MQQgghhBBCCCGEEEIIIYT+rXctaH2DACgAAA==",
+      "mtime": "2026-10-31T10:00:00.000Z"
+    },
+    {
+      "device": "emu",
+      "file": "20261031-110000.tar.gz",
+      "base64": "H4sIAAAAAAAAA+3TvQ6CMBiFYWavgnQ25KMBmngzhkBV/KFJCyzGe7dxw8XEiDq8z3KSdvjOci513+1sGLJjcH2yDImqqnhk9JzxU5K81EYXEqNKJJeiMEkqC/WZGcNQ+zT9xql/dFUn523dWr+drA+d69VGTVp0lYnJcrVWrZ26xsZXexnV7dd98VmNr8MhO7v9gjde7l/MfP9iylKz/28ItnF9u/p1DQAAAAAAAAAAAAAAALzpDh6cTWAAKAAA",
+      "mtime": "2026-10-31T11:00:00.000Z"
+    }
+  ],
+  "cases": [
+    {
+      "tool": "list_diagnostics",
+      "args": {},
+      "result": {
+        "isError": false,
+        "content": [
+          {
+            "type": "text",
+            "text": "[\n  {\n    \"device\": \"emu\",\n    \"file\": \"20261031-110000.tar.gz\",\n    \"size\": 192,\n    \"received\": \"2026-10-31T11:00:00.000Z\"\n  },\n  {\n    \"device\": \"emu\",\n    \"file\": \"20261031-100000.tar.gz\",\n    \"size\": 451,\n    \"received\": \"2026-10-31T10:00:00.000Z\"\n  },\n  {\n    \"device\": \"kindle-1\",\n    \"file\": \"20261031-090000.tar.gz\",\n    \"size\": 438,\n    \"received\": \"2026-10-31T09:00:00.000Z\"\n  }\n]"
+          }
+        ]
+      }
+    },
+    {
+      "tool": "list_diagnostics",
+      "args": {
+        "device": "emu"
+      },
+      "result": {
+        "isError": false,
+        "content": [
+          {
+            "type": "text",
+            "text": "[\n  {\n    \"device\": \"emu\",\n    \"file\": \"20261031-110000.tar.gz\",\n    \"size\": 192,\n    \"received\": \"2026-10-31T11:00:00.000Z\"\n  },\n  {\n    \"device\": \"emu\",\n    \"file\": \"20261031-100000.tar.gz\",\n    \"size\": 451,\n    \"received\": \"2026-10-31T10:00:00.000Z\"\n  }\n]"
+          }
+        ]
+      }
+    },
+    {
+      "tool": "list_diagnostics",
+      "args": {
+        "device": "nobody"
+      },
+      "result": {
+        "isError": false,
+        "content": [
+          {
+            "type": "text",
+            "text": "[]"
+          }
+        ]
+      }
+    },
+    {
+      "tool": "list_diagnostics",
+      "args": {
+        "device": "../.."
+      },
+      "result": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "Error: Diagnostics: invalid device name: ../.."
+          }
+        ]
+      }
+    },
+    {
+      "tool": "read_diagnostics",
+      "args": {
+        "device": "emu"
+      },
+      "result": {
+        "isError": false,
+        "content": [
+          {
+            "type": "text",
+            "text": "emu/20261031-110000.tar.gz, received 2026-10-31T11:00:00.000Z, 192 bytes\n\n--- manifest.json\n{\"koreader_version\":\"v2026.07.1\",\"device\":\"emu\"}\n\n--- crash.log (new lines only)\nsecond\n\n\n--- snapshot\n(missing)"
+          }
+        ]
+      }
+    },
+    {
+      "tool": "read_diagnostics",
+      "args": {
+        "device": "emu",
+        "file": "20261031-100000.tar.gz"
+      },
+      "result": {
+        "isError": false,
+        "content": [
+          {
+            "type": "text",
+            "text": "emu/20261031-100000.tar.gz, received 2026-10-31T10:00:00.000Z, 451 bytes\n\n--- manifest.json\n{\"koreader_version\":\"v2026.07.1\",\"device\":\"emu\"}\n\n--- crash.log (new lines only)\nfirst\nline two\n\n\n--- snapshot\nsnapshot 3 · window Menu · 2 widgets\n[3_1] button \"OK\"\n[3_2] text \"Hello\""
+          },
+          {
+            "type": "image"
+          }
+        ]
+      }
+    },
+    {
+      "tool": "read_diagnostics",
+      "args": {
+        "device": "kindle-1"
+      },
+      "result": {
+        "isError": false,
+        "content": [
+          {
+            "type": "text",
+            "text": "kindle-1/20261031-090000.tar.gz, received 2026-10-31T09:00:00.000Z, 438 bytes\n\n--- manifest.json\n{\"koreader_version\":\"v2026.07.1\",\"device\":\"kindle-1\"}\n\n--- crash.log (new lines only)\n(no new lines)\n\n--- snapshot\nsnapshot 3 · window Menu · 2 widgets\n[3_1] button \"OK\"\n[3_2] text \"Hello\""
+          },
+          {
+            "type": "image"
+          }
+        ]
+      }
+    },
+    {
+      "tool": "read_diagnostics",
+      "args": {
+        "device": ".."
+      },
+      "result": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "Error: Diagnostics: invalid device name: .."
+          }
+        ]
+      }
+    },
+    {
+      "tool": "read_diagnostics",
+      "args": {
+        "device": "emu",
+        "file": "../../x.tar.gz"
+      },
+      "result": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "Error: Diagnostics: invalid bundle name: ../../x.tar.gz"
+          }
+        ]
+      }
+    },
+    {
+      "tool": "read_diagnostics",
+      "args": {
+        "device": "emu",
+        "file": "none.tar.gz"
+      },
+      "result": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "Error: Diagnostics: no bundle none.tar.gz for device emu"
+          }
+        ]
+      }
+    },
+    {
+      "tool": "read_diagnostics",
+      "args": {
+        "device": "nobody"
+      },
+      "result": {
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "Error: Diagnostics: no bundle for device nobody"
+          }
+        ]
+      }
+    }
+  ]
+}

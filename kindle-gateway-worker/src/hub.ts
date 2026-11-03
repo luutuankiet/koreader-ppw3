@@ -132,6 +132,7 @@ export class Hub extends DurableObject<Env> {
       resizeScreenshot,
       einkDelayMs: Number(this.env.EINK_DELAY_MS),
       reconnectTimeoutMs: DEFAULT_RECONNECT_TIMEOUT_MS,
+      inbox: this.env.INBOX,
     });
     return this.mcp(request);
   }
