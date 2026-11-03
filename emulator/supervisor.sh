@@ -57,6 +57,9 @@ write_mcp_config() {
         echo "    device_name = \"${MCP_DEVICE_NAME:-emu}\","
         echo "    gateway_host = \"${MCP_GATEWAY_HOST:-127.0.0.1}\","
         echo "    gateway_port = ${MCP_GATEWAY_DEVICE_PORT:-9990},"
+        # A ws:// or wss:// URL switches the bridge to WebSocket; unset keeps raw TCP.
+        [ -n "${MCP_GATEWAY_URL:-}" ] && echo "    gateway_url = \"${MCP_GATEWAY_URL}\","
+        [ -n "${MCP_GATEWAY_KEY:-}" ] && echo "    gateway_key = \"${MCP_GATEWAY_KEY}\","
         echo "}"
     } > "$MCP_DIR/config.lua"
 }

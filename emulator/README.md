@@ -47,6 +47,8 @@ docker exec koreader-emu sh -c 'xwd -root -silent -display "$DISPLAY" | convert 
   | `MCP_DEVICE_NAME` | `emu` | name in `list_devices` |
   | `MCP_GATEWAY_HOST` | `127.0.0.1` | gateway host to dial |
   | `MCP_GATEWAY_DEVICE_PORT` | `9990` | the gateway's `DEVICE_PORT` |
+  | `MCP_GATEWAY_URL` | unset | a `ws://` or `wss://` gateway URL; when set the bridge speaks WebSocket to it and ignores host and port |
+  | `MCP_GATEWAY_KEY` | unset | device key sent as `Authorization: Bearer` on the WebSocket handshake and the diagnostics upload |
 
 - No `fbgrab` here: `capture_screenshot` falls back to KOReader's own `Screen:shot`.
 - `/mnt/us/koreader/koreader.sh` is a no-op shim: the gateway restart runs

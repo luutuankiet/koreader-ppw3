@@ -3,7 +3,8 @@ KOReader MCP plugin: the agent bridge.
 
 The device dials out to the gateway and carries tool calls over that one connection
 (live.lua). There is no listening server: outside a session this plugin has no socket
-and no timer. config.lua (optional) holds device_name, gateway_host, gateway_port and
+and no timer. config.lua (optional) holds device_name, gateway_host, gateway_port,
+gateway_url (a ws:// or wss:// URL, which selects WebSocket over raw TCP), gateway_key and
 live_mode; live_mode = "always" starts a session at boot and keeps it, unless the owner
 turned Live mode off in the menu, which is remembered across restarts.
 ]]
@@ -99,6 +100,88 @@ local function connect(host, port)
     return sock
 end
 
+-- LuaSec checks the chain against the bundle but not the name: check it here.
+local function certMatchesHost(conn, host)
+    local cert = conn:getpeercertificate()
+    if not cert then return false end
+    local names = {}
+    local ok, ext = pcall(cert.extensions, cert)
+    local san = ok and ext and ext["2.5.29.17"]
+    if san and san.dNSName then
+        for _, n in ipairs(san.dNSName) do names[#names + 1] = n end
+    end
+    if #names == 0 then
+        for _, entry in ipairs(cert:subject()) do
+            if entry.name == "commonName" then names[#names + 1] = entry.value end
+        end
+    end
+    host = host:lower()
+    for _, n in ipairs(names) do
+        n = n:lower()
+        if n == host then return true end
+        local suffix = n:match("^%*(%..+)$")
+        if suffix and host:sub(-#suffix) == suffix and not host:sub(1, -#suffix - 1):find("%.") then
+            return true
+        end
+    end
+    return false
+end
+
+-- A WebSocket to target (from Live.gatewayTarget). Blocks up to 5 s per step, like the
+-- raw TCP connect, and only when a session (re)connects.
+local function connectWebSocket(target)
+    local sock, err = connect(target.host, target.port)
+    if not sock then return nil, err end
+    sock:settimeout(5)
+    local conn = sock
+    if target.tls then
+        local ssl = require("ssl")
+        local wrapped, werr = ssl.wrap(sock, {
+            mode = "client",
+            protocol = "any",
+            options = { "all", "no_sslv2", "no_sslv3", "no_tlsv1" },
+            verify = "peer",
+            cafile = "data/ca-bundle.crt", -- KOReader's working directory is its install folder
+        })
+        if not wrapped then
+            sock:close()
+            return nil, "tls: " .. tostring(werr)
+        end
+        conn = wrapped
+        conn:sni(target.host)
+        conn:settimeout(5)
+        local ok, herr = conn:dohandshake()
+        if not ok then
+            conn:close()
+            return nil, "tls handshake: " .. tostring(herr)
+        end
+        if not certMatchesHost(conn, target.host) then
+            conn:close()
+            return nil, "tls: certificate is not for " .. target.host
+        end
+    end
+    local ws = require("ws")
+    local sha2 = require("ffi/sha2")
+    local ws_conn, ws_err, kind = ws.handshake(conn, {
+        target = target,
+        bearer = target.key,
+        random = function(n)
+            local bytes = {}
+            for i = 1, n do bytes[i] = string.char(math.random(0, 255)) end
+            return table.concat(bytes)
+        end,
+        sha1_hex = sha2.sha1,
+    })
+    if not ws_conn then
+        conn:close()
+        return nil, ws_err, kind
+    end
+    -- The raw socket's descriptor is the one to keep from children; done in connect().
+    ws_conn.getfd = function() return sock:getfd() end
+    conn:settimeout(0)
+    return ws_conn
+end
+
 -- 60s pings sit below KOReader's WiFi activity threshold, so its auto-off would cut the
 -- session. Pause the check rather than flip the setting, which a crash would persist.
 local function pauseWifiCheck()
@@ -120,10 +203,15 @@ local function setScreenSaverHeld(held)
     os.execute("lipc-set-prop com.lab126.powerd preventScreenSaver " .. (held and "1" or "0"))
 end
 
-local function gatewayAddress()
+-- Settings beat config.lua; a ws:// or wss:// URL beats host:port within each.
+local function gatewayTarget()
     local stored = settings:readSetting("gateway") or {}
-    return stored.host or config.gateway_host or DEFAULT_HOST,
-        tonumber(stored.port or config.gateway_port) or DEFAULT_PORT
+    return require("live").gatewayTarget({
+        url = settings:readSetting("gateway_url"),
+        key = settings:readSetting("gateway_key"),
+        host = stored.host,
+        port = stored.port,
+    }, config, DEFAULT_HOST, DEFAULT_PORT)
 end
 
 local function newSession()
@@ -131,9 +219,13 @@ local function newSession()
     local handlers = require("handlers")
     local server_json = require("server").json
     local ui_agent = require("ui_agent")
-    local host, port = gatewayAddress()
+    local target = gatewayTarget()
+    log("live mode gateway: " .. (target.kind == "ws" and target.url or (target.host .. ":" .. target.port)))
     return Live.new({
-        connect = connect,
+        connect = function()
+            if target.kind == "ws" then return connectWebSocket(target) end
+            return connect(target.host, target.port)
+        end,
         schedule = function(seconds, fn)
             timers_scheduled = timers_scheduled + 1
             -- Our own timers are never "pending UI work" for ui_act's idle wait.
@@ -171,7 +263,7 @@ local function newSession()
             log("session over (" .. tostring(reason) .. "), timers scheduled by this plugin: " .. timers_scheduled)
         end,
         log = log,
-    }, { host = host, port = port, always = config.live_mode == "always" })
+    }, { always = config.live_mode == "always" })
 end
 
 local function startSession()
@@ -233,8 +325,10 @@ end
 local function inboxUrl()
     local url = settings:readSetting("inbox_url") or config.inbox_url
     if type(url) == "string" and url ~= "" then return (url:gsub("/+$", "")) end
-    local host = gatewayAddress()
-    return "http://" .. host .. ":" .. DEFAULT_HTTP_PORT
+    local target = gatewayTarget()
+    -- A WebSocket gateway takes the inbox on its own origin.
+    if target.kind == "ws" then return require("live").httpOrigin(target) end
+    return "http://" .. target.host .. ":" .. DEFAULT_HTTP_PORT
 end
 
 local function diagnosticsInfo(device_name)
@@ -282,7 +376,7 @@ local function sendDiagnostics()
         local sending = InfoMessage:new{ text = _("Sending diagnostics...") }
         UIManager:show(sending)
         UIManager:forceRePaint()
-        local sent, upload_err = diagnostics.upload(url, device, built, stamp)
+        local sent, upload_err = diagnostics.upload(url, device, built, stamp, gatewayTarget().key)
         UIManager:close(sending)
         if sent then
             diagnostics.commit(built, offset_path)
@@ -329,6 +423,11 @@ function KOReaderMCP:addToMainMenu(menu_items)
                 text = _("Gateway address"),
                 keep_menu_open = true,
                 callback = function() self:showGatewayAddress() end,
+            },
+            {
+                text = _("Device key"),
+                keep_menu_open = true,
+                callback = function() self:showDeviceKey() end,
             },
         },
     }
@@ -386,14 +485,39 @@ function KOReaderMCP:showRename()
 end
 
 function KOReaderMCP:showGatewayAddress()
-    local host, port = gatewayAddress()
-    promptDialog(_("Gateway address (host:port)"), host .. ":" .. port, function(text)
-        local new_host, new_port = text:match("^([%w%.%-]+):(%d+)$")
-        if not new_host then
-            UIManager:show(InfoMessage:new{ text = _("Use host:port, for example 192.168.1.19:9990.") })
-            return
+    local target = gatewayTarget()
+    local current = target.kind == "ws" and target.url or (target.host .. ":" .. target.port)
+    promptDialog(_("Gateway address (host:port or wss:// URL)"), current, function(text)
+        text = text:gsub("^%s+", ""):gsub("%s+$", "")
+        if require("ws").parse_url(text) then
+            -- Stored as the URL alone: a stored host:port would otherwise shadow it.
+            settings:saveSetting("gateway_url", text)
+            settings:delSetting("gateway")
+        else
+            local new_host, new_port = text:match("^([%w%.%-]+):(%d+)$")
+            if not new_host then
+                UIManager:show(InfoMessage:new{
+                    text = _("Use host:port, for example 192.168.1.19:9990, or a URL such as wss://kindle.example.com/device."),
+                })
+                return
+            end
+            settings:saveSetting("gateway", { host = new_host, port = tonumber(new_port) })
+            settings:delSetting("gateway_url")
         end
-        settings:saveSetting("gateway", { host = new_host, port = tonumber(new_port) })
+        settings:flush()
+        restartIfActive()
+    end)
+end
+
+-- Sent as a bearer token to a WebSocket gateway and with diagnostics.
+function KOReaderMCP:showDeviceKey()
+    promptDialog(_("Device key"), gatewayTarget().key or settings:readSetting("gateway_key") or "", function(text)
+        text = text:gsub("%s+", "")
+        if text == "" then
+            settings:delSetting("gateway_key")
+        else
+            settings:saveSetting("gateway_key", text)
+        end
         settings:flush()
         restartIfActive()
     end)
