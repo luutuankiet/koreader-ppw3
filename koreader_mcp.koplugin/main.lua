@@ -4,7 +4,8 @@ KOReader MCP plugin: the agent bridge.
 The device dials out to the gateway and carries tool calls over that one connection
 (live.lua). There is no listening server: outside a session this plugin has no socket
 and no timer. config.lua (optional) holds device_name, gateway_host, gateway_port and
-live_mode; live_mode = "always" is the emulator, which runs a session permanently.
+live_mode; live_mode = "always" starts a session at boot and keeps it, unless the owner
+turned Live mode off in the menu, which is remembered across restarts.
 ]]
 
 local DataStorage = require("datastorage")
@@ -210,7 +211,10 @@ function KOReaderMCP:init()
 
     -- session_open still set means KOReader was killed mid-session, as restart_koreader
     -- does: pick the session back up so the agent gets the device back.
-    if config.live_mode == "always" or settings:isTrue("session_open") then
+    -- live_off is set when the owner turns Live mode off in the menu, so that choice
+    -- outlasts a restart even when config.lua says always.
+    local always = config.live_mode == "always" and not settings:isTrue("live_off")
+    if always or settings:isTrue("session_open") then
         UIManager:nextTick(startSession)
     else
         log("live mode off, timers scheduled by this plugin: " .. timers_scheduled)
@@ -306,8 +310,12 @@ function KOReaderMCP:addToMainMenu(menu_items)
                 checked_func = function() return session ~= nil and session:isActive() end,
                 callback = function()
                     if session and session:isActive() then
+                        settings:saveSetting("live_off", true)
+                        settings:flush()
                         stopSession("turned off in the menu")
                     else
+                        settings:delSetting("live_off")
+                        settings:flush()
                         NetworkMgr:runWhenOnline(startSession)
                     end
                 end,
