@@ -1080,7 +1080,26 @@ function KOSyncServerless:holdSleep(do_suspend)
     end
     logger.info("KOSyncServerless: sleep held, pushing progress first")
     local started = UIManager:getElapsedTimeSinceBoot()
+    local message
     self.sleep_hold = Sleep.hold{
+        -- a cold server takes 15-20 s; without this the screen looks hung
+        show_message = function()
+            message = InfoMessage:new{
+                text = _("Saving reading position before sleep…"),
+                dismissable = false,
+            }
+            UIManager:show(message)
+        end,
+        close_message = function(will_suspend)
+            if not message then return end
+            UIManager:close(message)
+            message = nil
+            -- Paint the page under the message now, like Device:onPowerEvent
+            -- does before suspending; the suspend itself runs on a later
+            -- tick (UIManager:suspend uses nextTick), so the screensaver
+            -- always paints over a screen without the message.
+            if will_suspend then UIManager:forceRePaint() end
+        end,
         push = function(cb) return self:pushNow(cb) end,
         suspend = function(reason)
             -- the Suspend that follows must not push a second time

@@ -8,6 +8,10 @@ import {
   formatActResult,
   formatSnapshot,
 } from '../../../kindle-gateway/src/ui-snapshot';
+import {
+  ACT_WAIT_NOTE, DESCRIPTIONS, DISCONNECT_RECONNECT_WAIT_MS, LogTail, PowerButtonResult, UiWaitResult,
+  disconnectText, formatLogTail, formatPowerButton, formatWaitResult, isDisconnectError, uiActTimeoutMs, waitForTimeoutMs,
+} from '../../../kindle-gateway/src/tool-text';
 import type { ToolContext } from '../mcp';
 
 /**
@@ -18,7 +22,10 @@ import type { ToolContext } from '../mcp';
 
 type ContentBlock = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
 export type ToolResult = { content: ContentBlock[]; isError?: boolean };
-type UiArgs = { device: string; ref?: string; text?: string; name?: string; value?: string; clear?: boolean; screenshot?: boolean; max_lines?: number };
+type UiArgs = {
+  device: string; ref?: string; text?: string; name?: string; value?: string; clear?: boolean; screenshot?: boolean; max_lines?: number;
+  wait?: number; gone?: boolean; timeout?: number; exact?: boolean;
+};
 
 /** Timeouts, as on the Node gateway. */
 export const TIMEOUTS = {
@@ -93,6 +100,7 @@ export function registerDeviceTools(server: McpServer, ctx: ToolContext): void {
     max_lines: z.number().int().positive().optional().describe(`Snapshot lines before the [+N more] cut (default ${DEFAULT_MAX_LINES})`),
   };
   const ref = z.string().describe('Widget ref from the last 2 snapshots, e.g. "3_7"');
+  const wait = z.number().positive().optional().describe(DESCRIPTIONS.wait);
 
   tool('snapshot',
     'List the widgets of the top KOReader window, one line each: [ref] kind "text" (state). Refs look like 3_7 and stay valid for the last 2 snapshots. Kinds: item (main menu row), row (list row), check, button, icon, input, tap, text.',
@@ -100,28 +108,57 @@ export function registerDeviceTools(server: McpServer, ctx: ToolContext): void {
     async (a) => uiCall(ctx, a, 'ui_snapshot', {}));
 
   tool('tap',
-    'Tap a widget by its snapshot ref (a gesture at the centre of the widget, no touch injection). Waits for KOReader to settle, returns the result, a new snapshot and the logs it caused.',
-    { ...uiCommon, ref },
-    async (a) => uiCall(ctx, a, 'ui_act', { what: 'tap', ref: a.ref }));
+    'Tap a widget by its snapshot ref (a gesture at the centre of the widget, no touch injection). Waits for KOReader to settle, returns the result, a new snapshot and the logs it caused.' + ACT_WAIT_NOTE,
+    { ...uiCommon, wait, ref },
+    async (a) => uiCall(ctx, a, 'ui_act', { what: 'tap', ref: a.ref, wait_cap: a.wait }));
 
   tool('hold',
-    'Long-press a widget by its snapshot ref. Waits for KOReader to settle, returns the result, a new snapshot and the logs it caused.',
-    { ...uiCommon, ref },
-    async (a) => uiCall(ctx, a, 'ui_act', { what: 'hold', ref: a.ref }));
+    'Long-press a widget by its snapshot ref. Waits for KOReader to settle, returns the result, a new snapshot and the logs it caused.' + ACT_WAIT_NOTE,
+    { ...uiCommon, wait, ref },
+    async (a) => uiCall(ctx, a, 'ui_act', { what: 'hold', ref: a.ref, wait_cap: a.wait }));
 
   tool('tap_text',
-    'Tap the first visible widget whose text matches (exact, case-insensitive; else the first that contains it). Needs no snapshot first.',
-    { ...uiCommon, text: z.string().describe('Visible text, e.g. "Synced reading list"') },
-    async (a) => uiCall(ctx, a, 'ui_act', { what: 'tap_text', text: a.text }));
+    'Tap the first visible widget whose text matches (exact, case-insensitive; else the first that contains it). Needs no snapshot first.' + ACT_WAIT_NOTE,
+    { ...uiCommon, wait, text: z.string().describe('Visible text, e.g. "Synced reading list"') },
+    async (a) => uiCall(ctx, a, 'ui_act', { what: 'tap_text', text: a.text, wait_cap: a.wait }));
 
   tool('type', 'Type text into the focused input field of the top window (or its only input).',
     { ...uiCommon, text: z.string().describe('Text to type'), clear: z.boolean().optional().describe('Clear the field first') },
     async (a) => uiCall(ctx, a, 'ui_act', { what: 'type', text: a.text, clear: a.clear === true }));
 
   tool('action',
-    'Run a KOReader Dispatcher action by name, e.g. "show_menu" (main menu), "home", "toggle_wifi". Optional value for actions that take one.',
-    { ...uiCommon, name: z.string().describe('Dispatcher action name'), value: z.string().optional().describe('Optional value; numbers and true/false are converted') },
-    async (a) => uiCall(ctx, a, 'ui_act', { what: 'action', name: a.name, value: parseActionValue(a.value) }));
+    'Run a KOReader Dispatcher action by name, e.g. "show_menu" (main menu), "home", "toggle_wifi". Optional value for actions that take one.' + ACT_WAIT_NOTE,
+    { ...uiCommon, wait, name: z.string().describe('Dispatcher action name'), value: z.string().optional().describe('Optional value; numbers and true/false are converted') },
+    async (a) => uiCall(ctx, a, 'ui_act', { what: 'action', name: a.name, value: parseActionValue(a.value), wait_cap: a.wait }));
+
+  tool('wait_for', DESCRIPTIONS.wait_for,
+    {
+      ...uiCommon,
+      text: z.string().describe('Text to wait for (case-insensitive; contained unless exact)'),
+      gone: z.boolean().optional().describe('Wait for the text to disappear instead'),
+      timeout: z.number().positive().optional().describe('Seconds to wait (default 10, the device clamps it to 0.5..60)'),
+      exact: z.boolean().optional().describe('Match the whole text only'),
+    },
+    async (a) => uiCall(ctx, a, 'ui_wait', { text: a.text, gone: a.gone, timeout: a.timeout, exact: a.exact }));
+
+  tool('power_button', DESCRIPTIONS.power_button,
+    { device },
+    async (a) => textCall(ctx, a.device, 'power_button', {}, (r) => formatPowerButton(r as PowerButtonResult)));
+
+  tool('read_log', DESCRIPTIONS.read_log,
+    {
+      device,
+      since: z.number().int().nonnegative().optional().describe('Marker from an earlier read_log; only newer lines are returned'),
+      max_lines: z.number().int().positive().optional().describe('Most lines to return (newest kept)'),
+      grep: z.string().optional().describe('Only lines containing this text'),
+    },
+    async (a) => {
+      const params: Record<string, unknown> = {};
+      if (a.since !== undefined) params.since = a.since;
+      if (a.max_lines !== undefined) params.max_lines = a.max_lines;
+      if (a.grep !== undefined) params.grep = a.grep;
+      return textCall(ctx, a.device, 'read_log', params, (r) => formatLogTail(r as LogTail));
+    });
 
   tool('screenshot',
     'Take a screenshot of the Kindle e-ink display. Returns the image directly as an MCP image content block.',
@@ -175,6 +212,33 @@ async function callDevice(ctx: ToolContext, name: string, method: string, params
 const reachErr = (name: string, err: unknown) =>
   errResult(`Failed to reach '${name}': ${err instanceof Error ? err.message : String(err)}`);
 
+/**
+ * A failed device call. When the connection closed under it (a restart, usually), wait for the
+ * device to reconnect, forget its snapshot refs (a restart resets the device's counter), and
+ * say which; the wait is wall time in the hub, not CPU.
+ */
+async function callFailed(ctx: ToolContext, name: string, err: unknown): Promise<ToolResult> {
+  if (!isDisconnectError(err)) return reachErr(name, err);
+  const back = await ctx.waitForReconnect(name, DISCONNECT_RECONNECT_WAIT_MS, Date.now());
+  ctx.tracker.forget(name);
+  const text = disconnectText(!!back);
+  return back ? { content: [{ type: 'text', text }] } : errResult(text);
+}
+
+/** A text-only device call for power_button and read_log. */
+async function textCall(
+  ctx: ToolContext, name: string, method: string, params: Record<string, unknown>, format: (result: unknown) => string,
+): Promise<ToolResult> {
+  if (!(await isConnected(ctx, name))) return errResult(`Device '${name}' is not connected`);
+  try {
+    const reply = await callDevice(ctx, name, method, params, TIMEOUTS.default);
+    if (reply.error) return errResult(`Device error: ${reply.error.message}`);
+    return { content: [{ type: 'text', text: format(reply.result) }] };
+  } catch (err) {
+    return callFailed(ctx, name, err);
+  }
+}
+
 /** The screenshot as an image block, or nothing (a failed screenshot is never fatal here). */
 async function screenshotBlock(ctx: ToolContext, name: string): Promise<ContentBlock | null> {
   try {
@@ -196,7 +260,7 @@ async function forward(ctx: ToolContext, name: string, method: string, params: R
     if (reply.error) return errResult(`Device error: ${reply.error.message}`);
     return { content: [{ type: 'text', text: resultText(reply.result) }] };
   } catch (err) {
-    return reachErr(name, err);
+    return callFailed(ctx, name, err);
   }
 }
 
@@ -211,12 +275,12 @@ async function forwardWithScreenshot(ctx: ToolContext, name: string, method: str
     if (img) content.push(img);
     return { content };
   } catch (err) {
-    return reachErr(name, err);
+    return callFailed(ctx, name, err);
   }
 }
 
-/** snapshot / tap / hold / tap_text / type / action. */
-async function uiCall(ctx: ToolContext, args: UiArgs, method: 'ui_snapshot' | 'ui_act', params: Record<string, unknown>): Promise<ToolResult> {
+/** snapshot / tap / hold / tap_text / type / action / wait_for. */
+async function uiCall(ctx: ToolContext, args: UiArgs, method: 'ui_snapshot' | 'ui_act' | 'ui_wait', params: Record<string, unknown>): Promise<ToolResult> {
   const name = args.device;
   if (!(await isConnected(ctx, name))) return errResult(`Device '${name}' is not connected`);
   if (typeof params.ref === 'string') {
@@ -225,10 +289,12 @@ async function uiCall(ctx: ToolContext, args: UiArgs, method: 'ui_snapshot' | 'u
   }
   let reply;
   try {
-    // ui_act replies only once KOReader is idle (capped at 5 s on the device).
-    reply = await callDevice(ctx, name, method, params, TIMEOUTS.ui);
+    // ui_act replies only once KOReader is idle (5 s, or wait_cap up to 30 s, on the device);
+    // ui_wait replies when the text matched or its own timeout passed.
+    const timeoutMs = method === 'ui_wait' ? waitForTimeoutMs(args.timeout) : uiActTimeoutMs(args.wait);
+    reply = await callDevice(ctx, name, method, params, timeoutMs);
   } catch (err) {
-    return reachErr(name, err);
+    return callFailed(ctx, name, err);
   }
   if (reply.error) return errResult(reply.error.message);
 
@@ -238,6 +304,10 @@ async function uiCall(ctx: ToolContext, args: UiArgs, method: 'ui_snapshot' | 'u
     const snap = reply.result as unknown as UiSnapshot;
     ctx.tracker.see(name, snap.snapshot);
     text = formatSnapshot(snap, maxLines).join('\n');
+  } else if (method === 'ui_wait') {
+    const w = reply.result as unknown as UiWaitResult;
+    ctx.tracker.see(name, w.snapshot?.snapshot);
+    text = formatWaitResult(w, args.gone === true, maxLines);
   } else {
     const act = reply.result as unknown as UiActResult;
     ctx.tracker.see(name, act.snapshot?.snapshot);

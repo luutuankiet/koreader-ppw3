@@ -13,6 +13,8 @@ without KOReader (test_sleep.lua).
         set_ignore_input = function(bool) end,   -- optional
         cap_s = 30,                              -- optional, default Retry.SLEEP_CAP_S
         on_done = function(reason) end,          -- optional; "confirmed", "failed", "cap", "external"
+        show_message = function() end,           -- optional; push still running after MESSAGE_DELAY_S
+        close_message = function(will_suspend) end, -- optional; once, only if shown, before suspend
     }
     hold.external_suspend() -- the device went to sleep on its own: release, never suspend
 
@@ -22,6 +24,10 @@ Lua 5.1 only.
 local Retry = require("kosyncserverless_retry")
 
 local Sleep = {}
+
+-- A push that answers within this many seconds never shows the "saving
+-- before sleep" message, so a warm server does not flash it.
+Sleep.MESSAGE_DELAY_S = 1
 
 --- Whether a sleep request should wait for a push.
 -- Only cheap state checks: never call anything that can turn Wi-Fi on.
@@ -43,11 +49,24 @@ function Sleep.hold(opts)
     local capped = false
     local handle = nil
     local cap_task
+    local message_shown = false
+
+    local function message_task()
+        if finished or message_shown then return end
+        message_shown = true
+        if opts.show_message then opts.show_message() end
+    end
 
     local function finish(reason, do_suspend)
         if finished then return end
         finished = true
         opts.unschedule(cap_task)
+        opts.unschedule(message_task)
+        -- before suspend, so the screensaver is not covered by the message
+        if message_shown then
+            message_shown = false
+            if opts.close_message then opts.close_message(do_suspend) end
+        end
         set_ignore_input(false)
         if do_suspend then opts.suspend(reason) end
         if opts.on_done then opts.on_done(reason) end
@@ -63,6 +82,7 @@ function Sleep.hold(opts)
 
     set_ignore_input(true)
     opts.scheduleIn(opts.cap_s or Retry.SLEEP_CAP_S, cap_task)
+    if opts.show_message then opts.scheduleIn(Sleep.MESSAGE_DELAY_S, message_task) end
     handle = opts.push(function(ok)
         if capped then return end
         finish(ok and "confirmed" or "failed", true)
