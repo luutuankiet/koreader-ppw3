@@ -13,6 +13,10 @@ import { bundleText } from './bundle-format';
 import { listBundles, readBundle } from './diagnostics';
 import { packageHostOptionsFromEnv } from './package-host';
 import { SnapshotTracker, UiActResult, UiSnapshot, formatActResult, formatSnapshot, DEFAULT_MAX_LINES } from './ui-snapshot';
+import {
+  ACT_WAIT_NOTE, DESCRIPTIONS, DISCONNECT_RECONNECT_WAIT_MS, LogTail, PowerButtonResult, UiWaitResult,
+  disconnectText, formatLogTail, formatPowerButton, formatWaitResult, isDisconnectError, uiActTimeoutMs, waitForTimeoutMs,
+} from './tool-text';
 
 // --- Type helpers ---
 type ContentBlock =
@@ -22,7 +26,11 @@ type ContentBlock =
 type ToolResult = { content: ContentBlock[]; isError?: boolean };
 type ToolArgs = Record<string, string | undefined>;
 // Typed arguments for tools whose schema has booleans or numbers.
-type UiArgs = { device: string; ref?: string; text?: string; name?: string; value?: string; clear?: boolean; screenshot?: boolean; max_lines?: number };
+type UiArgs = {
+  device: string; ref?: string; text?: string; name?: string; value?: string; clear?: boolean; screenshot?: boolean; max_lines?: number;
+  wait?: number; gone?: boolean; timeout?: number; exact?: boolean;
+};
+type LogArgs = { device: string; since?: number; max_lines?: number; grep?: string };
 
 function defineTool(
   server: McpServer,
@@ -148,6 +156,7 @@ export function createApp(registry: DeviceRegistry, inboxDir: string = packageHo
       screenshot: z.boolean().optional().describe('Also return a screenshot (default false)'),
       max_lines: z.number().int().positive().optional().describe(`Snapshot lines before the [+N more] cut (default ${DEFAULT_MAX_LINES})`),
     };
+    const actWait = { wait: z.number().positive().optional().describe(DESCRIPTIONS.wait) };
     const ui = (handler: (a: UiArgs) => Promise<ToolResult>) =>
       (args: ToolArgs) => handler(args as unknown as UiArgs);
 
@@ -158,21 +167,21 @@ export function createApp(registry: DeviceRegistry, inboxDir: string = packageHo
     );
 
     defineTool(server, 'tap',
-      'Tap a widget by its snapshot ref (a gesture at the centre of the widget, no touch injection). Waits for KOReader to settle, returns the result, a new snapshot and the logs it caused.',
-      { ...uiCommon, ref: z.string().describe('Widget ref from the last 2 snapshots, e.g. "3_7"') },
-      ui(async (a) => await uiCall(registry, uiTracker, a, 'ui_act', { what: 'tap', ref: a.ref }))
+      'Tap a widget by its snapshot ref (a gesture at the centre of the widget, no touch injection). Waits for KOReader to settle, returns the result, a new snapshot and the logs it caused.' + ACT_WAIT_NOTE,
+      { ...uiCommon, ...actWait, ref: z.string().describe('Widget ref from the last 2 snapshots, e.g. "3_7"') },
+      ui(async (a) => await uiCall(registry, uiTracker, a, 'ui_act', { what: 'tap', ref: a.ref, wait_cap: a.wait }))
     );
 
     defineTool(server, 'hold',
-      'Long-press a widget by its snapshot ref. Waits for KOReader to settle, returns the result, a new snapshot and the logs it caused.',
-      { ...uiCommon, ref: z.string().describe('Widget ref from the last 2 snapshots, e.g. "3_7"') },
-      ui(async (a) => await uiCall(registry, uiTracker, a, 'ui_act', { what: 'hold', ref: a.ref }))
+      'Long-press a widget by its snapshot ref. Waits for KOReader to settle, returns the result, a new snapshot and the logs it caused.' + ACT_WAIT_NOTE,
+      { ...uiCommon, ...actWait, ref: z.string().describe('Widget ref from the last 2 snapshots, e.g. "3_7"') },
+      ui(async (a) => await uiCall(registry, uiTracker, a, 'ui_act', { what: 'hold', ref: a.ref, wait_cap: a.wait }))
     );
 
     defineTool(server, 'tap_text',
-      'Tap the first visible widget whose text matches (exact, case-insensitive; else the first that contains it). Needs no snapshot first.',
-      { ...uiCommon, text: z.string().describe('Visible text, e.g. "Synced reading list"') },
-      ui(async (a) => await uiCall(registry, uiTracker, a, 'ui_act', { what: 'tap_text', text: a.text }))
+      'Tap the first visible widget whose text matches (exact, case-insensitive; else the first that contains it). Needs no snapshot first.' + ACT_WAIT_NOTE,
+      { ...uiCommon, ...actWait, text: z.string().describe('Visible text, e.g. "Synced reading list"') },
+      ui(async (a) => await uiCall(registry, uiTracker, a, 'ui_act', { what: 'tap_text', text: a.text, wait_cap: a.wait }))
     );
 
     defineTool(server, 'type',
@@ -182,9 +191,35 @@ export function createApp(registry: DeviceRegistry, inboxDir: string = packageHo
     );
 
     defineTool(server, 'action',
-      'Run a KOReader Dispatcher action by name, e.g. "show_menu" (main menu), "home", "toggle_wifi". Optional value for actions that take one.',
-      { ...uiCommon, name: z.string().describe('Dispatcher action name'), value: z.string().optional().describe('Optional value; numbers and true/false are converted') },
-      ui(async (a) => await uiCall(registry, uiTracker, a, 'ui_act', { what: 'action', name: a.name, value: parseActionValue(a.value) }))
+      'Run a KOReader Dispatcher action by name, e.g. "show_menu" (main menu), "home", "toggle_wifi". Optional value for actions that take one.' + ACT_WAIT_NOTE,
+      { ...uiCommon, ...actWait, name: z.string().describe('Dispatcher action name'), value: z.string().optional().describe('Optional value; numbers and true/false are converted') },
+      ui(async (a) => await uiCall(registry, uiTracker, a, 'ui_act', { what: 'action', name: a.name, value: parseActionValue(a.value), wait_cap: a.wait }))
+    );
+
+    defineTool(server, 'wait_for', DESCRIPTIONS.wait_for,
+      {
+        ...uiCommon,
+        text: z.string().describe('Text to wait for (case-insensitive; contained unless exact)'),
+        gone: z.boolean().optional().describe('Wait for the text to disappear instead'),
+        timeout: z.number().positive().optional().describe('Seconds to wait (default 10, the device clamps it to 0.5..60)'),
+        exact: z.boolean().optional().describe('Match the whole text only'),
+      },
+      ui(async (a) => await uiCall(registry, uiTracker, a, 'ui_wait', { text: a.text, gone: a.gone, timeout: a.timeout, exact: a.exact }))
+    );
+
+    defineTool(server, 'power_button', DESCRIPTIONS.power_button,
+      { device: z.string().describe('Device name') },
+      async (args) => await powerButton(registry, uiTracker, args.device!)
+    );
+
+    defineTool(server, 'read_log', DESCRIPTIONS.read_log,
+      {
+        device: z.string().describe('Device name'),
+        since: z.number().int().nonnegative().optional().describe('Marker from an earlier read_log; only newer lines are returned'),
+        max_lines: z.number().int().positive().optional().describe('Most lines to return (newest kept)'),
+        grep: z.string().optional().describe('Only lines containing this text'),
+      },
+      async (args) => await readLog(registry, uiTracker, args as unknown as LogArgs)
     );
 
     // === Screenshot (standalone, no preceding event) ===
@@ -292,6 +327,7 @@ async function forwardToolCall(
     };
   } catch (err) {
     console.error(`[forward] Failed to reach ${deviceName}:`, err);
+    if (isDisconnectError(err)) return await afterDisconnect(registry, deviceName);
     return errResult(`Failed to reach '${deviceName}': ${err instanceof Error ? err.message : String(err)}`);
   }
 }
@@ -345,6 +381,7 @@ async function forwardWithScreenshot(
     return { content };
   } catch (err) {
     console.error(`[forwardWithSS] Failed for ${deviceName}:`, err);
+    if (isDisconnectError(err)) return await afterDisconnect(registry, deviceName);
     return errResult(`Failed to reach '${deviceName}': ${err instanceof Error ? err.message : String(err)}`);
   }
 }
@@ -358,12 +395,29 @@ export function parseActionValue(v: string | undefined): unknown {
   return v;
 }
 
-/** Shared wrapper for snapshot / tap / hold / tap_text / type / action. Exported for tests. */
+/**
+ * After a call failed because the device's connection closed (a restart, usually): wait for
+ * the device to reconnect, forget its snapshot refs (a restart resets the device's counter),
+ * and say which. Exported for tests.
+ */
+export async function afterDisconnect(
+  registry: DeviceRegistry,
+  deviceName: string,
+  tracker?: SnapshotTracker,
+  waitMs: number = DISCONNECT_RECONNECT_WAIT_MS
+): Promise<ToolResult> {
+  const back = await registry.waitForConnection(deviceName, new Date(), waitMs);
+  tracker?.forget(deviceName);
+  const text = disconnectText(!!back);
+  return back ? { content: [{ type: 'text' as const, text }] } : errResult(text);
+}
+
+/** Shared wrapper for snapshot / tap / hold / tap_text / type / action / wait_for. Exported for tests. */
 export async function uiCall(
   registry: DeviceRegistry,
   tracker: SnapshotTracker,
   args: UiArgs,
-  method: 'ui_snapshot' | 'ui_act',
+  method: 'ui_snapshot' | 'ui_act' | 'ui_wait',
   params: Record<string, unknown>
 ): Promise<ToolResult> {
   const deviceName = args.device;
@@ -378,10 +432,13 @@ export async function uiCall(
   const client = new KindleClient(device);
   let response;
   try {
-    // ui_act replies only once KOReader is idle (capped at 5s on the device).
-    response = await client.callTool(method, params, 20000);
+    // ui_act replies only once KOReader is idle (5 s, or wait_cap up to 30 s, on the device);
+    // ui_wait replies when the text matched or its own timeout passed.
+    const timeoutMs = method === 'ui_wait' ? waitForTimeoutMs(args.timeout) : uiActTimeoutMs(args.wait);
+    response = await client.callTool(method, params, timeoutMs);
   } catch (err) {
     console.error(`[ui] Failed to reach ${deviceName}:`, err);
+    if (isDisconnectError(err)) return await afterDisconnect(registry, deviceName, tracker);
     return errResult(`Failed to reach '${deviceName}': ${err instanceof Error ? err.message : String(err)}`);
   }
   if (response.error) return errResult(response.error.message);
@@ -392,6 +449,10 @@ export async function uiCall(
     const snap = response.result as UiSnapshot;
     tracker.see(deviceName, snap.snapshot);
     text = formatSnapshot(snap, maxLines).join('\n');
+  } else if (method === 'ui_wait') {
+    const w = response.result as UiWaitResult;
+    tracker.see(deviceName, w.snapshot?.snapshot);
+    text = formatWaitResult(w, args.gone === true, maxLines);
   } else {
     const act = response.result as UiActResult;
     tracker.see(deviceName, act.snapshot?.snapshot);
@@ -411,6 +472,42 @@ export async function uiCall(
     }
   }
   return { content };
+}
+
+/** A text-only device call for power_button and read_log, with the disconnect report. */
+async function textCall(
+  registry: DeviceRegistry,
+  tracker: SnapshotTracker,
+  deviceName: string,
+  method: string,
+  params: Record<string, unknown>,
+  format: (result: unknown) => string
+): Promise<ToolResult> {
+  const device = registry.get(deviceName);
+  if (!device) return errResult(`Device '${deviceName}' is not connected`);
+  try {
+    const response = await new KindleClient(device).callTool(method, params);
+    if (response.error) return errResult(`Device error: ${response.error.message}`);
+    return { content: [{ type: 'text' as const, text: format(response.result) }] };
+  } catch (err) {
+    console.error(`[${method}] Failed to reach ${deviceName}:`, err);
+    if (isDisconnectError(err)) return await afterDisconnect(registry, deviceName, tracker);
+    return errResult(`Failed to reach '${deviceName}': ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/** Exported for tests. */
+export async function powerButton(registry: DeviceRegistry, tracker: SnapshotTracker, deviceName: string): Promise<ToolResult> {
+  return textCall(registry, tracker, deviceName, 'power_button', {}, (r) => formatPowerButton(r as PowerButtonResult));
+}
+
+/** Exported for tests. */
+export async function readLog(registry: DeviceRegistry, tracker: SnapshotTracker, args: LogArgs): Promise<ToolResult> {
+  const params: Record<string, unknown> = {};
+  if (args.since !== undefined) params.since = args.since;
+  if (args.max_lines !== undefined) params.max_lines = args.max_lines;
+  if (args.grep !== undefined) params.grep = args.grep;
+  return textCall(registry, tracker, args.device, 'read_log', params, (r) => formatLogTail(r as LogTail));
 }
 
 /** Standalone screenshot — calls Kindle's capture_screenshot, returns MCP image block */
