@@ -18,7 +18,7 @@ From `lipc-probe -v com.lab126.powerd`. Write-only properties can't be read back
 | `suspendGrace` | w Int | `Setting suspend grace timeout (seconds)`, `Suspend grace is set.  Waiting for %d secs` |
 | `abortSuspend` | w Int | event `e_abort_suspend` |
 | `addSuspendLevels` | w Int | event `e_add_suspend_levels` |
-| `preventScreenSaver` | rw Int | blocks the idle screensaver; the agent bridge sets it to `1` in Live mode |
+| `preventScreenSaver` | rw Int | blocks the idle screensaver, and also the `powerButton` press KOReader sleeps with (seen on a PW3: Sleep did nothing while it was `1`); the agent bridge sets it to `1` in Live mode and drops it to `0` just before a Sleep the owner asks for |
 | `powerButton` | w Int | simulates a press; KOReader uses it to start sleep |
 
 `deferSuspend` and `suspendGrace` have not been tested on a device yet. Issue #80 tracks whether they hold power button sleep.

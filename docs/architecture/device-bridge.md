@@ -1,7 +1,7 @@
 ---
 title: Device bridge (agent to Kindle)
 covers: how an agent call reaches a Kindle, which files own the gateway tools on Cloudflare and on the LAN fallback, the stateless MCP transport, the dial-out connection (WebSocket with a device key, or raw TCP) and live sessions, screenshots, diagnostics and running on Android
-verified: 2026-11-03
+verified: 2026-11-04
 ---
 
 # Device bridge
@@ -34,7 +34,7 @@ The device sends a hello (`name`, `id_hash`, versions); the gateway answers `wel
 - A name is refused only while a different `id_hash` holds it on an open connection. The same hash replaces the old connection, which covers a reconnect the gateway has not noticed yet.
 - `id_hash` is the first 12 hex digits of a SHA-256 of the serial; the serial itself never leaves the device, only its last 4 characters in the default name `pw3-XXXX`.
 - A session starts from the menu (Agent bridge, Live mode) and ends on 15 minutes without an agent command, battery below 30%, the menu, or failing to reconnect after 5 s, 15 s and 60 s. `session_open` in `<settings>/koreader_mcp.lua` resumes a session after a kill. `live_mode = "always"` in the plugin's `config.lua` starts the session at boot, never ends it and retries every 60 s, unless Live mode was turned off in the menu, which saves `live_off` in `<settings>/koreader_mcp.lua` and holds across restarts until it is turned back on; the emulator and both Kindles run this way, so nobody toggles live mode to develop. With live mode off nothing dials out and the agent cannot reach the device at all.
-- During a session on a Kindle: `preventScreenSaver` is held and KOReader's WiFi auto-off check is paused; both are put back at the end. This does the Keep alive plugin's job, so it is not needed (and a hold it set is left alone); the cost is that a Kindle in `always` mode never sleeps by itself. The socket is checked every 0.2 s within 10 s of an agent command, else every 2 s.
+- During a session on a Kindle: `preventScreenSaver` is held, KOReader's AutoSuspend is paused (`pluginshare.pause_auto_suspend`) and KOReader's WiFi auto-off check is paused; all are put back at the end. A held `preventScreenSaver` also makes powerd ignore KOReader's own sleep request (a simulated power button press), so `sleephold.lua` wraps the power device's `toggleSuspend`, the last step before powerd, to release the hold just before a Sleep the owner asked for, and takes it back on `Resume` if the session is still on. This does the Keep alive plugin's job, so it is not needed (and a hold it set is left alone); the cost is that a Kindle in `always` mode never sleeps by itself. The socket is checked every 0.2 s within 10 s of an agent command, else every 2 s.
 - The socket is `FD_CLOEXEC`: otherwise the detached restart shell inherits it and the gateway never sees the device go.
 - Connecting blocks the UI for up to 5 s per attempt; accepted because it only happens during a session.
 
@@ -76,10 +76,11 @@ Line numbers below are a starting point, not an address: jump roughly there, con
 | `kindle-gateway/src/device-registry.ts` | whole file | connected devices, in memory; `attach`, `waitForConnection` |
 | `koreader_mcp.koplugin/handlers.lua` | whole file | one `handlers.<tool>` per tool, `dispatch` at the end |
 | `koreader_mcp.koplugin/ws.lua` | whole file | WebSocket client: URL parsing, frame encode and decode, masking, handshake (401/403 is `rejected`), a connection that looks like a luasocket; tested by `test_live.lua` |
-| `koreader_mcp.koplugin/live.lua` | whole file | session state machine, with everything device-specific injected, tested by `test_live.lua` on plain luajit; `Live.gatewayTarget` (271-288) decides which setting wins |
-| `koreader_mcp.koplugin/main.lua` | 67-268 | what `live.lua` is given: identity, raw TCP `connect`, `connectWebSocket` and `certMatchesHost`, screen saver, WiFi check, `gatewayTarget` |
-| same | 269-322, 393-526 | plugin init, resume, menu, Gateway address and Device key dialogs |
-| same | 323-392 | Send diagnostics: inbox address, manifest info, build and upload |
+| `koreader_mcp.koplugin/live.lua` | whole file | session state machine, with everything device-specific injected, tested by `test_live.lua` on plain luajit; `Live.gatewayTarget` (300-317) decides which setting wins; `Live.statusText`, `failureText` and `parseAddress` (326-368) are the Connection status text, the first-failure pop-up and the Gateway address check |
+| `koreader_mcp.koplugin/sleephold.lua` | whole file | the Kindle screensaver hold for a session, released for a requested sleep and taken back on wake; tested by `test_sleephold.lua` |
+| `koreader_mcp.koplugin/main.lua` | 68-289 | what `live.lua` is given: identity, raw TCP `connect`, `connectWebSocket` and `certMatchesHost`, WiFi check, `gatewayTarget`, the one-shot `announce` pop-up for a session the user started |
+| same | 290-340, 409-558 | plugin init (makes the sleep hold), resume, menu, Connection status, Gateway address and Device key dialogs |
+| same | 341-408 | Send diagnostics: inbox address, manifest info, build and upload |
 | `koreader_mcp.koplugin/diagnostics.lua` | whole file | bundle build, redaction, log offset, upload; tested by `test_diagnostics.lua` |
 | `koreader_mcp.koplugin/server.lua` | whole file | supplies the JSON codec; its HTTP listener is no longer started |
 
