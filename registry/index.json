@@ -3,19 +3,19 @@
   "plugins": [
     {
       "name": "koreader_mcp",
-      "version": "0.3.2",
-      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/koreader_mcp-v0.3.2/koreader_mcp-0.3.2.tar.gz",
-      "size": 28086,
-      "sha256": "40bef70cb62056a390dcf3d8c051f3c9f121660a1f27815b7932410e5a4a83b3",
+      "version": "0.5.0",
+      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/koreader_mcp-v0.5.0/koreader_mcp-0.5.0.tar.gz",
+      "size": 31712,
+      "sha256": "55db895caef0412d6d352ebde5ff21c06b2aefc066fe22e72e6eac38080dbb9e",
       "description": "Agent bridge for remote device management. While live mode is on, the device holds a connection to the gateway and answers file, command, status and UI calls over it. Send diagnostics uploads one bundle to the gateway inbox.",
       "fullname": "KOReader MCP Server"
     },
     {
       "name": "kosyncserverless",
-      "version": "0.2.0",
-      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/kosyncserverless-v0.2.0/kosyncserverless-0.2.0.tar.gz",
-      "size": 18715,
-      "sha256": "640623415f14fc5b2f1fd32b5a79efb6b95c8bbd72827f1f31d575dfaaac38ca",
+      "version": "0.2.1",
+      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/kosyncserverless-v0.2.1/kosyncserverless-0.2.1.tar.gz",
+      "size": 19187,
+      "sha256": "272151d5cd7d2f9ea7b52cba7f7cb71ed4e427bbcb7eacb917ac634827d970c7",
       "description": "Synchronizes your reading progress to a server across your KOReader devices. A copy of the built-in Progress sync plugin for servers that sleep when idle.",
       "fullname": "Progress sync serverless"
     },
