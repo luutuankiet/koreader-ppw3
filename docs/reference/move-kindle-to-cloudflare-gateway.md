@@ -64,7 +64,8 @@ On the Kindle: Tools, **Plugin packages**. Leave **Package host** empty: the
 installer then reads `registry/index.json` from the `main` branch on GitHub
 and downloads archives from GitHub Releases, checking size and sha256. A
 Package host of `http://<home server>:9999/pkg/` stops working when the LAN
-gateway is retired, so clear it. A plugin reaches the registry by
+gateway is retired, so clear it. Clearing it needs pluginpackages 0.2.1 or
+later; earlier versions ignore an empty Save. A plugin reaches the registry by
 `scripts/publish.sh --github <plugin>` and the manifest change merged to
 `main`; `registry/index.json` is the list of what is there.
 
@@ -80,13 +81,13 @@ Not before all of these hold:
 
 1. Every Kindle and the emulator connect to the Cloudflare gateway (steps 1
    and 2; the emulator's settings are in `emulator/README.md`).
-2. R2 is enabled on the Cloudflare account and the inbox exists. Until then
-   the deployed Worker has no `INBOX` binding, so Send diagnostics gets 500
-   and `list_diagnostics` and `read_diagnostics` fail. After enabling R2 in
-   the dashboard, from `kindle-gateway-worker/`:
-   `npx wrangler r2 bucket create kindle-gateway-inbox && npx wrangler deploy`,
-   then send diagnostics from one device and read it back with
-   `read_diagnostics`.
+2. Send diagnostics works on the Cloudflare gateway. This already holds: the
+   R2 bucket `kindle-gateway-inbox` is bound as `INBOX`, its lifecycle rule
+   `expire-30d` deletes bundles after 30 days, and the Worker refuses an
+   upload with 507 once 200 bundles are stored (2 GB at most, inside R2's
+   10 GB free storage). Check with
+   `npx wrangler r2 bucket lifecycle list kindle-gateway-inbox` from
+   `kindle-gateway-worker/`.
 3. A 24 hour idle measurement with a device connected confirms the cost.
    Only 17 minutes have been measured so far: 0.00484 GB-s of Durable Object
    duration and 3 Durable Object requests (the hub's 5 minute sweep alarm), 0
