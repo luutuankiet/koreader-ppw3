@@ -1,8 +1,10 @@
 --[[--
 Tests for push before sleep (kosyncserverless_sleep.lua): which sleeps are
 held, suspend called exactly once on confirm, failure or the 30 s cap, the cap
-cancelling the push, input frozen during the hold only, and a sleep that the
-device started on its own during a hold never triggering a second suspend.
+cancelling the push, input frozen during the hold only, a sleep that the
+device started on its own during a hold never triggering a second suspend, and
+the "saving before sleep" message: shown only when the push is still running
+after Sleep.MESSAGE_DELAY_S, and closed before suspend on every finish path.
 Uses fakes for the scheduler and the push; also runs the real retry policy
 (kosyncserverless_retry.lua) under the hold with a fake request.
 
@@ -45,7 +47,7 @@ end
 -- A hold around a fake push the test answers by hand.
 local function setup(extra)
     reset()
-    local r = { suspends = {}, done = {}, input = {}, cancels = 0 }
+    local r = { suspends = {}, done = {}, input = {}, cancels = 0, shows = {}, closes = {}, log = {} }
     local push_cb
     local opts = {
         push = function(cb)
@@ -57,10 +59,16 @@ local function setup(extra)
                 return true
             end }
         end,
-        suspend = function(reason) table.insert(r.suspends, { reason = reason, t = now }) end,
+        suspend = function(reason)
+            table.insert(r.suspends, { reason = reason, t = now }); table.insert(r.log, "suspend")
+        end,
         scheduleIn = scheduleIn, unschedule = unschedule,
         set_ignore_input = function(b) table.insert(r.input, b) end,
         on_done = function(reason) table.insert(r.done, reason) end,
+        show_message = function() table.insert(r.shows, now); table.insert(r.log, "show") end,
+        close_message = function(will_suspend)
+            table.insert(r.closes, { t = now, will_suspend = will_suspend }); table.insert(r.log, "close")
+        end,
     }
     r.hold = Sleep.hold(opts)
     r.answer = function(ok) local c = push_cb; push_cb = nil; c(ok, { status = ok and 200 or nil }) end
@@ -180,6 +188,74 @@ do
     }
     advance(120)
     check("cold 12 s: one suspend at 12 s", #suspends == 1 and suspends[1].reason == "confirmed" and suspends[1].t == 12)
+end
+
+-- "saving before sleep" message
+check("message delay is 1 s", Sleep.MESSAGE_DELAY_S == 1)
+
+do
+    local r = setup()
+    advance(0.5)
+    r.answer(true)
+    advance(60)
+    check("fast push: no message shown", #r.shows == 0 and #r.closes == 0)
+    check("fast push: message timer cancelled", #tasks == 0)
+end
+
+do
+    local r = setup({ sync_answer = true })
+    advance(60)
+    check("synchronous answer: no message", #r.shows == 0 and #tasks == 0)
+end
+
+do
+    local r = setup()
+    advance(0.99)
+    check("slow push: nothing before the delay", #r.shows == 0)
+    advance(0.02)
+    check("slow push: message shown at 1 s", #r.shows == 1 and r.shows[1] == 1)
+    advance(10)
+    check("slow push: shown once", #r.shows == 1 and #r.closes == 0)
+    r.answer(true)
+    check("confirmed: message closed once", #r.closes == 1 and r.closes[1].will_suspend == true)
+    check("confirmed: close before suspend", r.log[2] == "close" and r.log[3] == "suspend", table.concat(r.log, ","))
+    advance(60)
+    check("confirmed: no reopen", #r.shows == 1 and #r.closes == 1)
+end
+
+do
+    local r = setup()
+    advance(5)
+    r.answer(false)
+    check("failed: close before suspend", #r.closes == 1 and table.concat(r.log, ",") == "show,close,suspend",
+        table.concat(r.log, ","))
+end
+
+do
+    local r = setup()
+    advance(31)
+    check("cap: close before suspend", #r.closes == 1 and table.concat(r.log, ",") == "show,close,suspend",
+        table.concat(r.log, ","))
+    check("cap: no tasks left", #tasks == 0)
+end
+
+do
+    local r = setup()
+    advance(3)
+    r.hold.external_suspend()
+    check("external: message closed, no suspend", #r.closes == 1 and r.closes[1].will_suspend == false
+        and #r.suspends == 0)
+    r.answer(true)
+    advance(60)
+    check("external: no reopen", #r.shows == 1 and #r.closes == 1)
+end
+
+do
+    local r = setup()
+    advance(0.5)
+    r.hold.external_suspend()
+    advance(60)
+    check("external before delay: never shown, timer cancelled", #r.shows == 0 and #r.closes == 0 and #tasks == 0)
 end
 
 print(passed .. " passed, " .. failed .. " failed")
