@@ -18,8 +18,8 @@ const MCP_URL = 'https://gw.test/mcp';
  *  (devices install from the registry). */
 const EXPECTED_TOOLS = [
   'action', 'close_top_widget', 'device_status', 'get_current_view', 'get_menu_items', 'go_back',
-  'hold', 'list_devices', 'list_diagnostics', 'read_diagnostics', 'read_files', 'restart_koreader', 'run_command', 'screenshot',
-  'select_menu_item', 'send_event', 'snapshot', 'tap', 'tap_text', 'type',
+  'hold', 'list_devices', 'list_diagnostics', 'power_button', 'read_diagnostics', 'read_files', 'read_log', 'restart_koreader',
+  'run_command', 'screenshot', 'select_menu_item', 'send_event', 'snapshot', 'tap', 'tap_text', 'type', 'wait_for',
 ].sort();
 
 /** A real PNG at the Paperwhite 3's full resolution, made with photon so no fixture file is needed. */
@@ -95,7 +95,27 @@ class FakeKindle {
       case 'ui_snapshot':
         reply(snapshotResult(++this.snapshotId));
         break;
+      case 'ui_wait': {
+        const matched = msg.params.text === 'Close';
+        reply({ matched, waited: matched ? 0.5 : Number(msg.params.timeout ?? 10), snapshot: snapshotResult(++this.snapshotId) });
+        break;
+      }
+      case 'power_button':
+        reply({ action: 'suspend', screen_saver_mode: false });
+        break;
+      case 'read_log':
+        reply({ marker: 42, lines: ['line a', 'line b'], truncated: msg.params.since === undefined });
+        break;
       case 'ui_act':
+        if (msg.params.text === 'Restart') {
+          // A dialog's Restart button: KOReader dies before it replies, then a fresh one connects.
+          this.restarts++;
+          setTimeout(() => {
+            try { ws.close(1001, 'restarting'); } catch { /* already closed */ }
+            setTimeout(() => { void this.connect(); }, 100);
+          }, 50);
+          break;
+        }
         reply({ result: `${msg.params.what} ok`, snapshot: snapshotResult(++this.snapshotId), logs: ['did it'] });
         break;
       case 'capture_screenshot':
@@ -264,7 +284,7 @@ describe('stateless MCP, both protocol versions', () => {
     const { tools } = await client.listTools();
     const tap = tools.find((t) => t.name === 'tap')!;
     expect(tap.inputSchema.required).toEqual(expect.arrayContaining(['device', 'ref']));
-    expect(Object.keys(tap.inputSchema.properties ?? {}).sort()).toEqual(['device', 'max_lines', 'ref', 'screenshot']);
+    expect(Object.keys(tap.inputSchema.properties ?? {}).sort()).toEqual(['device', 'max_lines', 'ref', 'screenshot', 'wait']);
   });
 
   it('serves the diagnostics tools from the R2 inbox', async () => {
@@ -383,5 +403,48 @@ describe.each([
     await call(client, 'snapshot', { device: dev.name });
     const tap = await call(client, 'tap', { device: dev.name, ref: '1_1' });
     expect(tap.isError).toBeFalsy();
+  });
+});
+
+describe('gateway quality-of-life tools (issue 23)', () => {
+  it('wait_for asks the device to wait and prints the match line and the snapshot', async () => {
+    const k = await kindle('qol-wait');
+    const client = await mcpClient(true);
+    const r = await call(client, 'wait_for', { device: 'qol-wait', text: 'Close', timeout: 3 });
+    expect(r.isError).toBeFalsy();
+    const lines = r.content[0].text!.split('\n');
+    expect(lines[0]).toBe('matched after 0.5s');
+    expect(lines).toContain(`[${k.snapshotId}_2] button "Close"`);
+    expect(k.calls.at(-1)).toEqual({ method: 'ui_wait', params: { text: 'Close', timeout: 3 } });
+    const miss = await call(client, 'wait_for', { device: 'qol-wait', text: 'Busy', gone: true, timeout: 2 });
+    expect(miss.content[0].text!.split('\n')[0]).toBe('timed out after 2s (text still present)');
+  });
+
+  it('passes wait to ui_act as wait_cap', async () => {
+    const k = await kindle('qol-tapwait');
+    const client = await mcpClient(true);
+    await call(client, 'tap_text', { device: 'qol-tapwait', text: 'OK', wait: 15 });
+    expect(k.calls.at(-1)?.params).toMatchObject({ what: 'tap_text', text: 'OK', wait_cap: 15 });
+  });
+
+  it('reports a tap that restarts KOReader and waits for the reconnect', async () => {
+    const k = await kindle('qol-restart');
+    const client = await mcpClient(true);
+    const r = await call(client, 'tap_text', { device: 'qol-restart', text: 'Restart' });
+    expect(r.isError).toBeFalsy();
+    expect(r.content[0].text).toBe('device restarting or disconnected; device reconnected, take a new snapshot');
+    expect(k.restarts).toBe(1);
+  });
+
+  it('power_button and read_log print what the device returned', async () => {
+    const k = await kindle('qol-misc');
+    const client = await mcpClient(true);
+    const p = await call(client, 'power_button', { device: 'qol-misc' });
+    expect(p.content[0].text).toBe('power button: suspend (device was awake)');
+    const log = await call(client, 'read_log', { device: 'qol-misc', max_lines: 50, grep: 'sync' });
+    expect(k.calls.at(-1)).toEqual({ method: 'read_log', params: { max_lines: 50, grep: 'sync' } });
+    expect(log.content[0].text).toBe('marker: 42 (older lines dropped)\nline a\nline b');
+    const again = await call(client, 'read_log', { device: 'qol-misc', since: 42 });
+    expect(again.content[0].text).toBe('marker: 42\nline a\nline b');
   });
 });

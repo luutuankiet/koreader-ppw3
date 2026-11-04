@@ -186,6 +186,7 @@ describe('E2E: kindle-gateway + fake kindle', () => {
       expect(res.status).toBe(200);
       expect(res.headers['mcp-session-id']).toBeUndefined();
       expect(toolNames(res.data)).toContain('list_devices');
+      expect(toolNames(res.data)).toEqual(expect.arrayContaining(['wait_for', 'power_button', 'read_log']));
     });
 
     test('a stale or bogus mcp-session-id header is ignored', async () => {
