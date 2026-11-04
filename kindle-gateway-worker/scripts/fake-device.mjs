@@ -55,6 +55,9 @@ function connect() {
     switch (msg.method) {
       case 'ui_snapshot': return reply(snapshot());
       case 'ui_act': return reply({ result: `${msg.params.what} ok`, snapshot: snapshot(), logs: ['fake: acted'] });
+      case 'ui_wait': return reply({ matched: true, waited: 0.2, snapshot: snapshot() });
+      case 'power_button': return reply({ action: 'resume', screen_saver_mode: false });
+      case 'read_log': return reply({ marker: 3, lines: ['fake: log line'], truncated: false });
       case 'capture_screenshot': return reply({ image_base64: png, size_bytes: Buffer.from(png, 'base64').length });
       case 'device_status': return reply({ name, battery: 80, fake: true });
       case 'get_current_view': return reply({ widgets: ['FileManager'] });
