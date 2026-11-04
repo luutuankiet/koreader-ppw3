@@ -460,5 +460,128 @@ test("gatewayTarget: a ws URL selects WebSocket, host:port raw TCP, settings bea
     eq(Live.gatewayTarget({ url = "http://nope" }, {}, "h", 1).kind, "tcp")
 end)
 
+-- Connection status, for the menu entry.
+
+test("status: connecting, then online under the name the gateway accepted", function()
+    local w = world()
+    eq(w.live:status().state, "off")
+    w.live:start()
+    eq(w.live:status().state, "greeting") -- hello sent, no welcome yet: shown as Connecting…
+    w.feed({ type = "welcome", name = "pw3-renamed" })
+    w.step()
+    local s = w.live:status()
+    eq(s.state, "online"); eq(s.name, "pw3-renamed"); eq(s.last_heard, w.t)
+end)
+
+test("status: a failure is kept as the last error while waiting, and cleared by a welcome", function()
+    local w = world({ connect = function(w2)
+        if w2.connects == 1 then return nil, "handshake failed: HTTP/1.1 404 Not Found" end
+        w2.sock = { settimeout = function() end, close = function() end,
+            send = function(_, d) return #d end,
+            receive = function() local l = table.remove(w2.inbox, 1); if l then return l end; return nil, "timeout", "" end }
+        return w2.sock
+    end })
+    w.live:start()
+    local s = w.live:status()
+    eq(s.state, "waiting"); eq(s.last_error, "connect failed: handshake failed: HTTP/1.1 404 Not Found")
+    w.step() -- the retry connects
+    w.feed({ type = "welcome", name = "kindle" })
+    w.step()
+    eq(w.live:status().state, "online"); eq(w.live:status().last_error, nil)
+end)
+
+test("statusText: one line per state, with the gateway and how long ago it was heard", function()
+    eq(Live.statusText({ state = "online", name = "pw3-ab12", last_heard = 90 }, 100, "wss://g/device"),
+        "Online as pw3-ab12\nGateway: wss://g/device\nLast heard: 10 s ago")
+    eq(Live.statusText({ state = "connecting", last_heard = 100 }, 100, "h:1"),
+        "Connecting…\nGateway: h:1\nLast heard: 0 s ago")
+    eq(Live.statusText({ state = "greeting" }, 100, "h:1"), "Connecting…\nGateway: h:1")
+    eq(Live.statusText({ state = "waiting", last_error = "boom", last_heard = 40 }, 100, "h:1"),
+        "Waiting to retry (last error: boom)\nGateway: h:1\nLast heard: 60 s ago")
+    eq(Live.statusText({ state = "off" }, 100, "h:1"), "Off\nGateway: h:1")
+    eq(Live.statusText({ state = "off", last_error = "gateway unreachable" }, 100, "h:1"),
+        "Off (last error: gateway unreachable)\nGateway: h:1")
+end)
+
+-- Pop-ups only for a session the user started.
+
+local function announcer()
+    local said = {}
+    return said, function(ok, text) said[#said + 1] = { ok = ok, text = text } end
+end
+
+test("announce: a user start reports the welcome once; a later reconnect stays silent", function()
+    local w = world()
+    local said, announce = announcer()
+    w.live:start(announce)
+    w.feed({ type = "welcome", name = "pw3-ab12" })
+    w.step()
+    eq(#said, 1); eq(said[1].ok, true); eq(said[1].text, "pw3-ab12")
+    w.read_error = "closed"
+    w.step() -- lost: waiting
+    w.read_error = nil
+    w.step() -- reconnects
+    w.feed({ type = "welcome", name = "pw3-ab12" })
+    w.step()
+    eq(#said, 1)
+end)
+
+test("announce: the first failure is reported once, the retries after it are not", function()
+    local w = world()
+    w.connect_ok = false
+    local said, announce = announcer()
+    w.live:start(announce)
+    eq(#said, 1); eq(said[1].ok, false); eq(said[1].text, "connect failed: refused")
+    w.step(); w.step()
+    eq(#said, 1)
+end)
+
+test("announce: a refused name and a rejected key are reported", function()
+    local w = world()
+    local said, announce = announcer()
+    w.live:start(announce)
+    w.feed({ type = "refused", reason = "name taken" })
+    w.step()
+    eq(#said, 1); eq(said[1].ok, false); eq(said[1].text, "refused: name taken")
+    local w2 = world({ connect = function() return nil, "gateway rejected the device key (HTTP 401)", "rejected" end })
+    local said2, announce2 = announcer()
+    w2.live:start(announce2)
+    eq(#said2, 1); eq(said2[1].text, "gateway rejected the device key (HTTP 401)")
+end)
+
+test("announce: a start with no callback, and a stop before any outcome, say nothing", function()
+    local w = world()
+    w.live:start()
+    w.feed({ type = "welcome", name = "k" }); w.step()
+    local w2 = world()
+    local said, announce = announcer()
+    w2.live:start(announce)
+    w2.live:stop("user")
+    w2.connect_ok = false
+    w2.live:start()
+    eq(#said, 0)
+end)
+
+test("failureText: a 404 says the address must end in /device", function()
+    local text = Live.failureText("connect failed: handshake failed: HTTP/1.1 404 Not Found")
+    assert(text:find("404 Not Found", 1, true), text)
+    assert(text:find("/device", 1, true), text)
+    eq(Live.failureText("connect failed: timeout"), "Agent bridge could not connect: connect failed: timeout")
+end)
+
+-- The Gateway address prompt.
+
+test("parseAddress: a ws URL, a bare ws host gets /device, host:port, anything else is nil", function()
+    eq(Live.parseAddress("wss://kindle.example.org/device").url, "wss://kindle.example.org/device")
+    eq(Live.parseAddress("  wss://kindle.example.org  ").url, "wss://kindle.example.org/device")
+    eq(Live.parseAddress("wss://kindle.example.org/").url, "wss://kindle.example.org/device")
+    eq(Live.parseAddress("ws://10.0.0.2:8790").url, "ws://10.0.0.2:8790/device")
+    eq(Live.parseAddress("wss://g/custom").url, "wss://g/custom")
+    local tcp = Live.parseAddress("192.168.1.19:9990")
+    eq(tcp.host, "192.168.1.19"); eq(tcp.port, 9990); eq(tcp.url, nil)
+    eq(Live.parseAddress("https://kindle.example.org/device"), nil)
+    eq(Live.parseAddress("kindle.example.org"), nil)
+end)
+
 print(string.format("%d tests, %d failures", count, failures))
 os.exit(failures == 0 and 0 or 1)

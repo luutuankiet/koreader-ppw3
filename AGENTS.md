@@ -12,7 +12,7 @@ Workspace for developing KOReader plugins for Kindle Paperwhite 3 devices, plus 
 
 ## Layout
 
-- `koreader_mcp.koplugin/` - agent bridge inside KOReader, dialling out to the gateway during a live session (`handlers.lua` tools, `live.lua` session and connection, `main.lua` entry and menu, `server.lua` JSON codec, `ui_agent.lua` widget snapshot and actions, tests with `luajit test_ui_agent.lua` and `luajit test_live.lua`)
+- `koreader_mcp.koplugin/` - agent bridge inside KOReader, dialling out to the gateway during a live session (`handlers.lua` tools, `live.lua` session and connection, `main.lua` entry and menu, `server.lua` JSON codec, `ui_agent.lua` widget snapshot and actions, `sleephold.lua` Kindle screensaver hold and sleep release, tests with `luajit test_ui_agent.lua`, `luajit test_live.lua` and `luajit test_sleephold.lua`)
 - `kindle-gateway/` - Node/TypeScript MCP relay, now the LAN fallback on the home server (`src/gateway-server.ts` tools, `src/device-link.ts` device connections, `src/device-registry.ts` in-memory registry of connected devices, `src/ui-snapshot.ts` snapshot formatting and stale references)
 - `kindle-gateway-worker/` - the gateway on Cloudflare: a Worker in front of one Durable Object (`src/hub.ts`) that holds every device's WebSocket and serves stateless MCP on `/mcp` behind `AGENT_KEY` (`src/mcp.ts` tool groups, `src/tools/` tools, `src/screenshot.ts` photon JPEG encode, `src/inbox.ts` diagnostics upload to R2 on `PUT /inbox/<device>/<file>` behind `DEVICE_KEY`, `src/diagnostics-tools.ts` list and read diagnostics); `npm test` (vitest in workerd), `npx tsc --noEmit`, `scripts/fake-device.mjs` plus `scripts/mcp-client.mjs` against `npx wrangler dev`
 - `rssreader.koplugin/` - FreshRSS reader plugin (separate repo)

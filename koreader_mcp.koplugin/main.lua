@@ -32,6 +32,7 @@ local function log(msg) logger.info("[MCP] " .. msg) end
 -- KOReader rebuilds the plugin instance on every file manager / reader switch, so the
 -- session belongs to the loaded file, and onCloseWidget must not stop it.
 local session
+local sleep_hold -- sleephold.lua, made once in init
 local config = {}
 local settings
 local plugin_dir
@@ -197,12 +198,6 @@ local function resumeWifiCheck()
     end
 end
 
-local function setScreenSaverHeld(held)
-    if not Device:isKindle() then return end
-    if not held and require("pluginshare").keepalive then return end
-    os.execute("lipc-set-prop com.lab126.powerd preventScreenSaver " .. (held and "1" or "0"))
-end
-
 -- Settings beat config.lua; a ws:// or wss:// URL beats host:port within each.
 local function gatewayTarget()
     local stored = settings:readSetting("gateway") or {}
@@ -247,7 +242,7 @@ local function newSession()
             return ok and capacity or nil
         end,
         on_begin = function()
-            setScreenSaverHeld(true)
+            sleep_hold:set(true)
             pauseWifiCheck()
             -- A config-driven session starts by itself and leaves no state behind.
             if config.live_mode ~= "always" then
@@ -256,7 +251,7 @@ local function newSession()
             end
         end,
         on_end = function(reason)
-            setScreenSaverHeld(false)
+            sleep_hold:set(false)
             resumeWifiCheck()
             settings:saveSetting("session_open", false)
             settings:flush()
@@ -266,10 +261,19 @@ local function newSession()
     }, { always = config.live_mode == "always" })
 end
 
-local function startSession()
+-- A session the user started reports how it went, once; see Live:start.
+local function announce(ok, text)
+    if ok then
+        UIManager:show(InfoMessage:new{ text = _("Connected as ") .. text, timeout = 3 })
+    else
+        UIManager:show(InfoMessage:new{ text = require("live").failureText(text) })
+    end
+end
+
+local function startSession(on_outcome)
     if session and session:isActive() then return end
     session = newSession()
-    session:start()
+    session:start(on_outcome)
 end
 
 local function stopSession(reason)
@@ -279,7 +283,7 @@ end
 local function restartIfActive()
     if session and session:isActive() then
         stopSession("settings changed")
-        startSession()
+        startSession(announce)
     end
 end
 
@@ -300,6 +304,13 @@ function KOReaderMCP:init()
     local ok, loaded = pcall(dofile, plugin_dir .. "/config.lua")
     if ok and type(loaded) == "table" then config = loaded end
     settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/koreader_mcp.lua")
+    sleep_hold = require("sleephold").new({
+        is_kindle = Device:isKindle(),
+        share = require("pluginshare"),
+        exec = os.execute,
+        log = log,
+    })
+    sleep_hold:wrap(Device:getPowerDevice())
 
     -- session_open still set means KOReader was killed mid-session, as restart_koreader
     -- does: pick the session back up so the agent gets the device back.
@@ -311,6 +322,11 @@ function KOReaderMCP:init()
     else
         log("live mode off, timers scheduled by this plugin: " .. timers_scheduled)
     end
+end
+
+-- Sent by KOReader on every wake. A session still on takes the screensaver hold back.
+function KOReaderMCP:onResume()
+    if sleep_hold then sleep_hold:resumed(session ~= nil and session:isActive()) end
 end
 
 function KOReaderMCP:onNetworkConnected()
@@ -410,9 +426,14 @@ function KOReaderMCP:addToMainMenu(menu_items)
                     else
                         settings:delSetting("live_off")
                         settings:flush()
-                        NetworkMgr:runWhenOnline(startSession)
+                        NetworkMgr:runWhenOnline(function() startSession(announce) end)
                     end
                 end,
+            },
+            {
+                text = _("Connection status"),
+                keep_menu_open = true,
+                callback = function() self:showStatus() end,
             },
             {
                 text = _("Rename device"),
@@ -442,11 +463,12 @@ function KOReaderMCP:addToMainMenu(menu_items)
     }
 end
 
-local function promptDialog(title, value, on_save)
+local function promptDialog(title, value, on_save, description)
     local dialog
     dialog = InputDialog:new{
         title = title,
         input = value,
+        description = description,
         buttons = {{
             {
                 text = _("Cancel"),
@@ -484,29 +506,39 @@ function KOReaderMCP:showRename()
     end)
 end
 
-function KOReaderMCP:showGatewayAddress()
+local function gatewayAddress()
     local target = gatewayTarget()
-    local current = target.kind == "ws" and target.url or (target.host .. ":" .. target.port)
-    promptDialog(_("Gateway address (host:port or wss:// URL)"), current, function(text)
-        text = text:gsub("^%s+", ""):gsub("%s+$", "")
-        if require("ws").parse_url(text) then
+    return target.kind == "ws" and target.url or (target.host .. ":" .. target.port)
+end
+
+function KOReaderMCP:showStatus()
+    local Live = require("live")
+    local status = session and session:status() or { state = "off" }
+    UIManager:show(InfoMessage:new{
+        text = Live.statusText(status, require("socket").gettime(), gatewayAddress()),
+    })
+end
+
+local ADDRESS_HELP = _("The gateway URL, for example wss://kindle.example.org/device. The path /device is required; a URL with no path gets it added. A local gateway also takes host:port, for example 192.168.1.19:9990.")
+
+function KOReaderMCP:showGatewayAddress()
+    promptDialog(_("Gateway address"), gatewayAddress(), function(text)
+        local address = require("live").parseAddress(text)
+        if not address then
+            UIManager:show(InfoMessage:new{ text = ADDRESS_HELP })
+            return
+        end
+        if address.url then
             -- Stored as the URL alone: a stored host:port would otherwise shadow it.
-            settings:saveSetting("gateway_url", text)
+            settings:saveSetting("gateway_url", address.url)
             settings:delSetting("gateway")
         else
-            local new_host, new_port = text:match("^([%w%.%-]+):(%d+)$")
-            if not new_host then
-                UIManager:show(InfoMessage:new{
-                    text = _("Use host:port, for example 192.168.1.19:9990, or a URL such as wss://kindle.example.com/device."),
-                })
-                return
-            end
-            settings:saveSetting("gateway", { host = new_host, port = tonumber(new_port) })
+            settings:saveSetting("gateway", { host = address.host, port = address.port })
             settings:delSetting("gateway_url")
         end
         settings:flush()
         restartIfActive()
-    end)
+    end, ADDRESS_HELP)
 end
 
 -- Sent as a bearer token to a WebSocket gateway and with diagnostics.
