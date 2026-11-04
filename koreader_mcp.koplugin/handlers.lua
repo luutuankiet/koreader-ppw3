@@ -461,6 +461,11 @@ function handlers.list_tools(params)
         {name = "send_event", description = "L3: Trigger a KOReader internal event (e.g. ShowMenu)"},
         {name = "capture_screenshot", description = "Capture e-ink framebuffer as base64 PNG"},
         {name = "write_file", description = "Atomically write a file from base64 content (no shell ARG_MAX)"},
+        {name = "ui_snapshot", description = "List the top window's widgets with references"},
+        {name = "ui_act", description = "Tap, hold, tap_text, type or action, then reply once the UI is idle"},
+        {name = "ui_wait", description = "Wait until text appears (or is gone) in the top window"},
+        {name = "power_button", description = "Press the power button: suspend when awake, resume when asleep"},
+        {name = "read_log", description = "Log lines since a marker, optionally filtered"},
     }
 end
 
@@ -491,9 +496,16 @@ function handlers.ui_snapshot(params)
 end
 dispatch_table.ui_snapshot = handlers.ui_snapshot
 
+function handlers.read_log(params)
+    return ui_agent.readLog(params or {})
+end
+dispatch_table.read_log = handlers.read_log
+
 -- Methods that reply later, once the UI is idle: fn(params, done).
 handlers.deferred = {
     ui_act = function(params, done) ui_agent.act(params or {}, done) end,
+    ui_wait = function(params, done) ui_agent.wait(params or {}, done) end,
+    power_button = function(params, done) ui_agent.powerButton(params or {}, done) end,
 }
 
 function handlers.dispatch(method, params)

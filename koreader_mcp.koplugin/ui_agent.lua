@@ -6,6 +6,8 @@
 -- Actions (tap, hold, tap_text, type, action) run, then the reply waits until
 -- the UI manager has no pending work (capped), and carries one result line,
 -- a new snapshot and the log lines written since the action started.
+-- Also: wait (ui_wait, poll for text), powerButton (suspend or resume) and
+-- readLog (read_log, the captured log by sequence-number marker).
 --
 -- The walk follows the array part of each widget only: that is the tree
 -- KOReader propagates gesture events through (WidgetContainer:propagateEvent),
@@ -15,7 +17,9 @@ local M = {}
 local KEEP_SNAPSHOTS = 2
 local MAX_DEPTH = 60
 local TEXT_MAX = 80
-local LOG_KEEP = 200
+-- 1000 lines of a few hundred bytes each: well under 1 MB on a 512 MB Kindle.
+local LOG_KEEP = 1000
+M.LOG_KEEP = LOG_KEEP
 
 -- ---------------------------------------------------------------- references
 -- Pure: no KOReader needed, covered by test_ui_agent.lua.
@@ -92,6 +96,39 @@ function M.logsSince(mark, max)
     return out
 end
 
+--- read_log: lines after marker `since` (or the last `max_lines` without one).
+-- `marker` is the newest line's sequence number, the `since` for the next call.
+-- `truncated` says lines after `since` are missing: they fell out of the ring,
+-- or `max_lines` cut the oldest of them.
+function M.readLog(params)
+    params = params or {}
+    local max = math.floor(tonumber(params.max_lines) or 200)
+    max = math.max(1, math.min(max, LOG_KEEP))
+    local grep = params.grep ~= nil and tostring(params.grep) or nil
+    if grep == "" then grep = nil end
+    local oldest = math.max(1, log_seq - LOG_KEEP + 1)
+    local since = tonumber(params.since)
+    local truncated = false
+    local first = oldest
+    if since then
+        since = math.floor(since)
+        if since + 1 < oldest then truncated = true end
+        first = math.max(oldest, since + 1)
+    end
+    local out = {}
+    for i = first, log_seq do
+        local line = log_lines[i]
+        if line and (not grep or line:find(grep, 1, true)) then out[#out + 1] = line end
+    end
+    if #out > max then
+        if since then truncated = true end
+        local tail = {}
+        for i = #out - max + 1, #out do tail[#tail + 1] = out[i] end
+        out = tail
+    end
+    return { marker = log_seq, lines = out, truncated = truncated }
+end
+
 -- ------------------------------------------------------------------- walk
 local function clip(s)
     if type(s) ~= "string" then return nil end
@@ -125,7 +162,11 @@ function M.describe(w)
         -- TouchMenuItem (main menu row)
         local item = w.item
         local text = item.text or call(item.text_func)
-        if item.checked or call(item.checked_func) then state[#state + 1] = "checked" end
+        if item.checked or call(item.checked_func) then
+            state[#state + 1] = "checked"
+        elseif item.checked ~= nil or item.checked_func then
+            state[#state + 1] = "unchecked"
+        end
         local enabled = item.enabled
         if item.enabled_func then enabled = call(item.enabled_func) end
         if enabled == false then state[#state + 1] = "disabled" end
@@ -142,7 +183,7 @@ function M.describe(w)
         return "row", text, state
     end
     if w.onTapCheckButton then
-        if w.checked then state[#state + 1] = "checked" end
+        state[#state + 1] = w.checked and "checked" or "unchecked"
         if w.enabled == false then state[#state + 1] = "disabled" end
         return "check", clip(w.text), state
     end
@@ -215,10 +256,11 @@ local function topWindow()
 end
 
 --- Take and register a snapshot; returns the JSON-ready table.
-function M.snapshot()
-    local top = topWindow()
+-- `top` and `nodes` reuse a walk the caller already made.
+function M.snapshot(top, nodes)
+    top = top or topWindow()
     if not top then return nil, "no window on screen" end
-    local nodes = M.walk(top)
+    nodes = nodes or M.walk(top)
     local widgets, lines = {}, {}
     for i, n in ipairs(nodes) do widgets[i] = n.widget end
     local id = M.store:add(widgets)
@@ -354,7 +396,7 @@ function M.act(params, done)
         done(nil, { code = -32602, message = err })
         return
     end
-    local cap = tonumber(params.wait_cap) or 5
+    local cap = math.max(0, math.min(tonumber(params.wait_cap) or 5, 30))
     local t0 = os.time()
     local idle_runs = 0
     local check
@@ -376,6 +418,103 @@ function M.act(params, done)
     end
     M.own_tasks[check] = true
     UIManager:scheduleIn(0.15, check)
+end
+
+-- Seconds as a float; tests replace it.
+function M.now()
+    local ok, socket = pcall(require, "socket")
+    if ok and socket.gettime then return socket.gettime() end
+    return os.time()
+end
+
+local WAIT_POLL = 0.3
+
+--- True if any node's text contains `want` (case-insensitive), or equals it if exact.
+local function hasText(nodes, want, exact)
+    local lwant = want:lower()
+    for _, n in ipairs(nodes) do
+        local t = n.text or ""
+        if exact then
+            if t == want then return true end
+        elseif t:lower():find(lwant, 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+--- Deferred handler for ui_wait: poll the top window until `text` shows (or is
+-- gone, with `gone`) or `timeout` seconds pass. Never blocks: each poll is a
+-- UIManager task, registered in own_tasks so ui_act's idle check ignores it.
+function M.wait(params, done)
+    local want = tostring(params.text or "")
+    if want == "" then
+        done(nil, { code = -32602, message = "missing 'text'" })
+        return
+    end
+    if not ui() then
+        done(nil, { code = -32603, message = "UIManager not available" })
+        return
+    end
+    local gone = params.gone == true
+    local exact = params.exact == true
+    local timeout = math.max(0.5, math.min(tonumber(params.timeout) or 10, 60))
+    local t0 = M.now()
+    local poll
+    poll = function()
+        M.own_tasks[poll] = nil
+        local top = topWindow()
+        local nodes = top and M.walk(top) or {}
+        local matched = hasText(nodes, want, exact) ~= gone
+        local waited = M.now() - t0
+        if matched or waited >= timeout then
+            local snap, serr = M.snapshot(top, top and nodes or nil)
+            done({
+                matched = matched,
+                waited = math.floor(waited * 10 + 0.5) / 10,
+                snapshot = snap,
+                snapshot_error = serr,
+            })
+            return
+        end
+        M.own_tasks[poll] = true
+        UIManager:scheduleIn(math.min(WAIT_POLL, timeout - waited), poll)
+    end
+    poll()
+end
+
+--- Deferred handler for power_button: reply first, act on a later tick. On a
+-- Kindle, suspending drops the connection, so a reply sent after would be lost.
+function M.powerButton(_, done)
+    if not ui() then
+        done(nil, { code = -32603, message = "UIManager not available" })
+        return
+    end
+    local ok_d, Device = pcall(require, "device")
+    if not ok_d or type(Device) ~= "table" then
+        done(nil, { code = -32603, message = "Device not available" })
+        return
+    end
+    local asleep = Device.screen_saver_mode and true or false
+    -- Locked: a screensaver delay is waiting for a tap; a press would re-suspend.
+    if Device.screen_saver_lock then
+        done({ action = "locked", screen_saver_mode = asleep })
+        return
+    end
+    local handlers = UIManager.event_handlers or {}
+    local act
+    if handlers.PowerRelease then
+        -- SDL, Kobo and others: the platform's own press handler.
+        act = function() handlers.PowerRelease() end
+    elseif asleep then
+        -- Kindle has no PowerRelease handler (the framework owns the button).
+        act = function() if handlers.Resume then handlers.Resume() end end
+    else
+        act = function() UIManager:suspend() end
+    end
+    done({ action = asleep and "resume" or "suspend", screen_saver_mode = asleep })
+    M.own_tasks[act] = true
+    UIManager:scheduleIn(0.2, act)
 end
 
 return M

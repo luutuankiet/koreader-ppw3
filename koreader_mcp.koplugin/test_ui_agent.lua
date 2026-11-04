@@ -80,5 +80,116 @@ fakeUI._window_stack = { { widget = popup } }
 fakeUI._dirty = { [popup] = true }
 check("busy when no window covers the screen and one is dirty", ui.isIdle() == false)
 
+-- unchecked: a checkable row or check button that is off says so
+kind, text, state = ui.describe({ item = { text = "Auto sync", checked_func = function() return false end }, menu = {}, onTapSelect = noop })
+check("checkable item that is off is unchecked", kind == "item" and state[1] == "unchecked")
+kind, text, state = ui.describe({ item = { text = "Auto sync", checked = false }, menu = {}, onTapSelect = noop })
+check("item with checked = false is unchecked", state[1] == "unchecked")
+kind, text, state = ui.describe({ item = { text = "About" }, menu = {}, onTapSelect = noop })
+check("item that is not checkable has no check state", #state == 0)
+kind, text, state = ui.describe({ onTapCheckButton = noop, text = "Show all" })
+check("check button that is off is unchecked", kind == "check" and state[1] == "unchecked")
+
+-- read_log: the ring with sequence numbers as markers
+io.write = function() end -- the capture forwards here; keep test output readable
+ui.installLogCapture()
+local base = ui.logMark()
+io.write("") -- an empty write adds nothing
+for i = 1, 5 do io.write("line " .. i .. (i % 2 == 0 and " even" or "") .. "\n") end
+local r = ui.readLog({ since = base })
+check("read_log since a marker returns the new lines and the latest marker",
+    r.marker == base + 5 and #r.lines == 5 and r.lines[1] == "line 1" and r.truncated == false)
+r = ui.readLog({ since = base, grep = "even" })
+check("read_log grep keeps matching lines only", #r.lines == 2 and r.lines[2] == "line 4 even")
+r = ui.readLog({ max_lines = 2 })
+check("read_log without since returns the last max_lines", #r.lines == 2 and r.lines[2] == "line 5" and r.truncated == false)
+r = ui.readLog({ since = r.marker })
+check("read_log at the latest marker returns nothing", #r.lines == 0 and r.marker == base + 5)
+for i = 1, ui.LOG_KEEP + 3 do io.write("flood " .. i .. "\n") end
+r = ui.readLog({ since = base, max_lines = 5000 })
+check("read_log since a marker that fell out of the ring is truncated",
+    r.truncated == true and #r.lines == ui.LOG_KEEP and r.lines[#r.lines] == "flood " .. (ui.LOG_KEEP + 3))
+r = ui.readLog({ since = r.marker - 10, max_lines = 3 })
+check("read_log cut by max_lines keeps the newest and says truncated", #r.lines == 3 and r.truncated == true
+    and r.lines[3] == "flood " .. (ui.LOG_KEEP + 3))
+
+-- ui_wait and power_button: a fake clock and task queue on the fake UIManager
+local clock, queue = 0, {}
+ui.now = function() return clock end
+fakeUI.scheduleIn = function(_, s, fn) queue[#queue + 1] = { at = clock + s, fn = fn } end
+local function runQueue(limit)
+    for _ = 1, limit or 1000 do
+        if #queue == 0 then return end
+        table.sort(queue, function(x, y) return x.at < y.at end)
+        local t = table.remove(queue, 1)
+        clock = math.max(clock, t.at)
+        t.fn()
+    end
+end
+local dialog = { name = "dialog", { text = "Waking sync server..." } }
+fakeUI._window_stack = { { widget = filemanager }, { widget = dialog } }
+fakeUI._dirty = {}
+
+local got
+ui.wait({ text = "waking SYNC" }, function(res, e) got = { res = res, err = e } end)
+check("ui_wait matches present text at once, case-insensitively",
+    got and got.res.matched == true and got.res.waited == 0 and got.res.snapshot.window == "dialog")
+
+got = nil
+ui.wait({ text = "Waking sync", exact = true, timeout = 2 }, function(res) got = res end)
+runQueue()
+check("ui_wait exact needs the whole text and times out otherwise",
+    got and got.matched == false and got.waited >= 2 and got.waited < 2.5)
+
+got = nil
+clock = 0
+ui.wait({ text = "waking", gone = true, timeout = 10 }, function(res) got = res end)
+check("ui_wait gone keeps polling while the text is there", got == nil and #queue == 1 and ui.own_tasks[queue[1].fn])
+clock = 1.2
+dialog[1] = { text = "Progress has been pushed." }
+runQueue()
+check("ui_wait gone matches once the text disappears", got and got.matched == true and got.waited >= 1.2 and got.waited < 2)
+
+got = nil
+ui.wait({ text = "never", timeout = 999 }, function(res) got = res end)
+runQueue()
+check("ui_wait timeout is clamped to 60 s", got and got.matched == false and got.waited >= 60 and got.waited < 61)
+got = nil
+ui.wait({ text = "" }, function(res, e) got = { res = res, err = e } end)
+check("ui_wait without text is refused", got and got.res == nil and got.err.code == -32602)
+
+-- power_button
+local calls = {}
+local device = { screen_saver_mode = false, screen_saver_lock = false }
+package.loaded["device"] = device
+fakeUI.event_handlers = {}
+fakeUI.suspend = function() calls[#calls + 1] = "suspend" end
+fakeUI.event_handlers.Resume = function() calls[#calls + 1] = "resume" end
+queue = {}
+got = nil
+ui.powerButton({}, function(res) got = res end)
+check("power_button replies before acting", got and got.action == "suspend" and got.screen_saver_mode == false and #calls == 0)
+runQueue()
+check("power_button suspends on the next tick when awake", calls[1] == "suspend")
+
+calls, got = {}, nil
+device.screen_saver_mode = true
+ui.powerButton({}, function(res) got = res end)
+runQueue()
+check("power_button resumes when asleep", got.action == "resume" and got.screen_saver_mode == true and calls[1] == "resume")
+
+calls, got = {}, nil
+fakeUI.event_handlers.PowerRelease = function() calls[#calls + 1] = "power_release" end
+ui.powerButton({}, function(res) got = res end)
+runQueue()
+check("power_button uses PowerRelease when the platform has it", got.action == "resume" and calls[1] == "power_release" and #calls == 1)
+
+calls, got = {}, nil
+device.screen_saver_lock = true
+ui.powerButton({}, function(res) got = res end)
+runQueue()
+check("power_button does nothing while the screen saver is locked",
+    got.action == "locked" and got.screen_saver_mode == true and #calls == 0)
+
 print(fails == 0 and "ALL OK" or (fails .. " FAILED"))
 os.exit(fails == 0 and 0 or 1)
