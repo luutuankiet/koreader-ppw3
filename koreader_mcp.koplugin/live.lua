@@ -53,11 +53,16 @@ end
 
 function Live:isActive() return self.state ~= "off" end
 
-function Live:start()
+-- announce(ok, text) is for a session the user started: called once, with the name the
+-- gateway accepted or with the first failure. Reconnects after that stay silent.
+function Live:start(announce)
     if self:isActive() then return end
     local now = self.deps.now()
     self.last_command = now
     self.retries = 0
+    self.last_error = nil
+    self.name = nil
+    self.announce = announce
     self.state = "connecting"
     self.deps.on_begin()
     self:_connect()
@@ -65,6 +70,7 @@ end
 
 function Live:stop(reason)
     if not self:isActive() then return end
+    self.announce = nil
     self:_drop()
     self:_cancel_timer()
     self.state = "off"
@@ -132,8 +138,26 @@ function Live:_connect()
     self:_schedule_tick()
 end
 
+-- What the Connection status menu entry shows; see Live.statusText.
+function Live:status()
+    return { state = self.state, name = self.name, last_error = self.last_error, last_heard = self.last_heard }
+end
+
+function Live:_announce(ok, text)
+    local announce = self.announce
+    if not announce then return end
+    self.announce = nil
+    pcall(announce, ok, text)
+end
+
+function Live:_failed(reason)
+    self.last_error = tostring(reason)
+    self:_announce(false, self.last_error)
+end
+
 -- The connection is gone: wait and retry, or end once the delays run out.
 function Live:_lost(reason)
+    self:_failed(reason)
     self:_drop()
     self.deps.log("live mode connection lost: " .. tostring(reason))
     self.retries = self.retries + 1
@@ -149,6 +173,7 @@ end
 -- The gateway turned the device key down. On a Kindle the session ends, as for a refused
 -- name; the emulator waits REJECTED_DELAY, never the short retry delays.
 function Live:_rejected(reason)
+    self:_failed(reason)
     self:_drop()
     self.deps.log("live mode rejected: " .. tostring(reason))
     if not self.always then return self:stop(reason) end
@@ -202,10 +227,14 @@ function Live:_handle(line)
     if msg.type == "welcome" then
         self.state = "online"
         self.retries = 0
+        self.last_error = nil
+        self.name = msg.name
         self.deps.log("live mode online as " .. tostring(msg.name))
+        self:_announce(true, tostring(msg.name))
     elseif msg.type == "refused" then
         -- A name clash will not clear by itself on a Kindle; the emulator keeps trying.
         if self.always then return self:_lost("refused: " .. tostring(msg.reason)) end
+        self:_failed("refused: " .. tostring(msg.reason))
         self:stop("refused: " .. tostring(msg.reason))
     elseif msg.method then
         self:_call(msg)
@@ -291,6 +320,51 @@ function Live.httpOrigin(target)
     local origin = (target.tls and "https://" or "http://") .. target.host
     if target.explicit_port then origin = origin .. ":" .. target.port end
     return origin
+end
+
+-- The Connection status text. status from Live:status(), now in seconds, address as typed.
+function Live.statusText(status, now, address)
+    local state, head = status.state
+    if state == "online" then
+        head = "Online as " .. tostring(status.name)
+    elseif state == "connecting" or state == "greeting" then
+        head = "Connecting…"
+    elseif state == "waiting" then
+        head = "Waiting to retry (last error: " .. tostring(status.last_error) .. ")"
+    else
+        head = status.last_error and ("Off (last error: " .. status.last_error .. ")") or "Off"
+    end
+    local lines = { head, "Gateway: " .. tostring(address) }
+    if state ~= "off" and status.last_heard then
+        lines[#lines + 1] = string.format("Last heard: %d s ago", math.max(0, now - status.last_heard))
+    end
+    return table.concat(lines, "\n")
+end
+
+-- The pop-up for the first failure of a session the user started.
+function Live.failureText(err)
+    local text = "Agent bridge could not connect: " .. tostring(err)
+    if tostring(err):find("HTTP/%d%.%d 404") then
+        text = text .. "\n\nThe gateway address must end in /device, for example wss://kindle.example.org/device."
+    end
+    return text
+end
+
+--[[
+What the Gateway address prompt saves. A ws:// or wss:// URL with no path gets /device, the
+path the gateway takes devices on; host:port still selects raw TCP.
+-> { url } | { host, port } | nil
+]]
+function Live.parseAddress(text)
+    text = text:gsub("^%s+", ""):gsub("%s+$", "")
+    local target = require("ws").parse_url(text)
+    if target then
+        if target.path == "/" then text = text:gsub("/?$", "/device", 1) end
+        return { url = text }
+    end
+    local host, port = text:match("^([%w%.%-]+):(%d+)$")
+    if host then return { host = host, port = tonumber(port) } end
+    return nil
 end
 
 function Live.validName(name)
