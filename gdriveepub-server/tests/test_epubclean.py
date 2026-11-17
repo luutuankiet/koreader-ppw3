@@ -84,3 +84,25 @@ def test_blank_line_inside_code_kept_but_not_after_it():
     from gdriveepub.epubclean import clean_xhtml
     out, stats = clean_xhtml(page)
     assert stats["code_lines"] == 3 and stats["empty_paragraphs_removed"] == 1
+
+
+def _li_texts(root):
+    return ["".join(li.itertext()) for li in root.iter(f"{X}li")]
+
+
+def test_list_numbers_written_into_the_text(epub_bytes):
+    # Google numbers lists with CSS counters in li:before; KOReader does not evaluate counter(),
+    # so only the ". " was left. The cleanup writes each marker into the item as text.
+    _, root, _ = cleaned_doc(epub_bytes)
+    texts = _li_texts(root)
+    assert texts[:5] == ["1. Number one", "2. Number two", "a. Letter a", "3. Number three", "● Dot item"]
+    style = "".join(s.text or "" for s in root.iter(f"{X}style"))
+    assert "li:before" not in style and "counter(" not in style
+
+
+def test_horizontal_rule_kept(epub_bytes):
+    # Docs exports a horizontal rule as an empty paragraph with a bottom border.
+    _, root, _ = cleaned_doc(epub_bytes)
+    hrs = list(root.iter(f"{X}hr"))
+    assert len(hrs) == 1
+    assert etree.QName(hrs[0].getnext()).localname == "ol"
