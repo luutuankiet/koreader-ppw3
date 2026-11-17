@@ -13,7 +13,7 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 from starlette.routing import Route
 
 from . import __version__, driveq, names, pairing
-from .config import Settings
+from .config import Settings, email_hash
 from .google import Google, GoogleError, ReauthNeeded, TooLarge, auth_url, id_token_claims
 from .store import Store
 
@@ -83,11 +83,11 @@ def create_app(settings: Settings, store: Store, google: Google | None = None, n
         if not pairing.pending(store.read(), pair_id, now()):
             return page("Pairing expired", "Start pairing again on the Kindle and scan the new code.", 404)
         state = pairing.sign_state(skey, "pair:" + pair_id, now())
-        return RedirectResponse(auth_url(settings.client_id, settings.redirect_uri, state, settings.owner_email), 302)
+        return RedirectResponse(auth_url(settings.client_id, settings.redirect_uri, state), 302)
 
     async def reauth(request):
         state = pairing.sign_state(skey, "reauth", now())
-        return RedirectResponse(auth_url(settings.client_id, settings.redirect_uri, state, settings.owner_email), 302)
+        return RedirectResponse(auth_url(settings.client_id, settings.redirect_uri, state), 302)
 
     async def callback(request):
         q = request.query_params
@@ -103,14 +103,14 @@ def create_app(settings: Settings, store: Store, google: Google | None = None, n
             return page("Sign-in failed", "Google refused the sign-in code. Try again.", 502)
         claims = id_token_claims(tokens.get("id_token", "x.e30.x"))
         email = (claims.get("email") or "").lower()
-        if claims.get("aud") != settings.client_id or not claims.get("email_verified") or email != settings.owner_email:
+        if claims.get("aud") != settings.client_id or not claims.get("email_verified") or not settings.is_owner(email):
             log.warning("rejected sign-in for a non-owner account")
-            return page("Wrong account", "This server only accepts its owner's Google account.", 403)
+            return page("Wrong account", "This server only accepts the Google accounts its owner allowed.", 403)
         refresh = tokens.get("refresh_token")
 
         def fn(state):
             if refresh:
-                state["google"] = {"refresh_token": refresh, "email": email, "updated_at": now()}
+                state["google"] = {"refresh_token": refresh, "email_sha256": email_hash(email), "updated_at": now()}
             if purpose.startswith("pair:"):
                 return pairing.approve(state, purpose[5:], now())
             return True

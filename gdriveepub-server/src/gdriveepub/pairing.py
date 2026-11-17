@@ -1,7 +1,7 @@
 """Pairing and device keys as pure operations on the state dict.
 
 State shape (one JSON object):
-  {"google": {"refresh_token": str, "email": str, "updated_at": float} | absent,
+  {"google": {"refresh_token": str, "email_sha256": str, "updated_at": float} | absent,
    "device_keys": [{"sha256": hex, "created_at": float}],
    "pairings": {pair_id: {"secret_sha256": hex, "expires_at": float, "status": "pending"|"approved"}}}
 Plain device keys are never stored: the key is minted when an approved pairing is polled.

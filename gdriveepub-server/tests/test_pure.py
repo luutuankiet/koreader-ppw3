@@ -1,3 +1,4 @@
+import hashlib
 from datetime import datetime, timezone
 
 import pytest
@@ -76,7 +77,8 @@ def test_state_token():
     assert pairing.verify_state(k, "garbage", 101) is None
 
 
-BASE = {"BASE_URL": "https://x", "OWNER_EMAIL": "Me@Example.com", "GOOGLE_CLIENT_ID": "id", "GOOGLE_CLIENT_SECRET": "s"}
+ME_HASH = hashlib.sha256(b"me@example.com").hexdigest()
+BASE = {"BASE_URL": "https://x", "OWNER_EMAIL_SHA256": ME_HASH, "GOOGLE_CLIENT_ID": "id", "GOOGLE_CLIENT_SECRET": "s"}
 
 
 def test_dev_token_refused_on_cloud_run():
@@ -85,4 +87,23 @@ def test_dev_token_refused_on_cloud_run():
     with pytest.raises(config.ConfigError):
         config.load_settings({**BASE, "DEV_DEVICE_KEY": "k", "K_SERVICE": "gdrive-epub", "STATE_BUCKET": "b"})
     s = config.load_settings({**BASE, "DEV_ACCESS_TOKEN": "t"})
-    assert s.owner_email == "me@example.com" and s.redirect_uri == "https://x/auth/callback"
+    assert s.owner_email_sha256 == frozenset({ME_HASH}) and s.redirect_uri == "https://x/auth/callback"
+
+
+def test_owner_hash_list_parsing():
+    other = hashlib.sha256(b"other@example.com").hexdigest()
+    s = config.load_settings({**BASE, "OWNER_EMAIL_SHA256": f" {ME_HASH.upper()} , {other},, "})
+    assert s.owner_email_sha256 == frozenset({ME_HASH, other})
+    assert s.is_owner(" Me@Example.COM ") and s.is_owner("other@example.com")
+    assert not s.is_owner("someone@example.com") and not s.is_owner("")
+
+
+@pytest.mark.parametrize("value", ["", " , ", "not-hex", "ab" * 31, "me@example.com"])
+def test_owner_hash_list_rejected(value):
+    with pytest.raises(config.ConfigError):
+        config.load_settings({**BASE, "OWNER_EMAIL_SHA256": value})
+
+
+def test_plain_owner_email_refused():
+    with pytest.raises(config.ConfigError, match="OWNER_EMAIL_SHA256"):
+        config.load_settings({**BASE, "OWNER_EMAIL": "me@example.com"})
