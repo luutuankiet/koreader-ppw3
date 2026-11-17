@@ -91,6 +91,18 @@ def _is_mono(el) -> bool:
     return bool(MONO.search(dict(_parse_style(el.get("style", ""))).get("font-family", "")))
 
 
+def _mono_spans(p, with_text: bool) -> bool:
+    spans = [s for s in p.iter(f"{{{XHTML}}}span") if not with_text or (s.text or "").strip("\u00a0 ")]
+    return bool(spans) and all(_is_mono(s) for s in spans)
+
+
+def _blank_code_line(p) -> bool:
+    """An empty monospace paragraph between two code lines is a blank line inside a code block."""
+    prev, nxt = p.getprevious(), p.getnext()
+    return (_mono_spans(p, False) and prev is not None and nxt is not None and _tag(prev) == "p"
+            and _tag(nxt) == "p" and _mono_spans(prev, True) and _mono_spans(nxt, True))
+
+
 def clean_xhtml(data: bytes) -> tuple[bytes, dict]:
     parser = etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=True)
     root = etree.fromstring(data, parser)
@@ -100,7 +112,11 @@ def clean_xhtml(data: bytes) -> tuple[bytes, dict]:
         return data, stats
 
     for p in list(body.iter(f"{{{XHTML}}}p")):
-        if _is_empty_block(p):
+        if _is_empty_block(p) and _blank_code_line(p):
+            _add_class(p, "gde-code")
+            span = next(p.iter(f"{{{XHTML}}}span"))
+            span.text = "\u00a0"
+        elif _is_empty_block(p):
             parent = p.getparent()
             if p.tail and p.tail.strip():
                 prev = p.getprevious()
@@ -137,7 +153,9 @@ def clean_xhtml(data: bytes) -> tuple[bytes, dict]:
     code = []
     for p in paras:
         spans = [s for s in p.iter(f"{{{XHTML}}}span") if (s.text or "").strip("  ")]
-        if spans and all("gde-mono" in (s.get("class") or "") for s in spans) and not (p.text or "").strip():
+        if "gde-code" in (p.get("class") or ""):  # blank code line kept above
+            code.append(p)
+        elif spans and all("gde-mono" in (s.get("class") or "") for s in spans) and not (p.text or "").strip():
             _add_class(p, "gde-code")
             code.append(p)
     for p in code:

@@ -25,7 +25,7 @@ def test_zip_layout_kept(epub_bytes):
 
 def test_stats(epub_bytes):
     _, _, stats = cleaned_doc(epub_bytes)
-    assert stats == {"empty_paragraphs_removed": 2, "code_lines": 2, "images": 1, "documents": 1}
+    assert stats == {"empty_paragraphs_removed": 2, "code_lines": 3, "images": 1, "documents": 1}
 
 
 def test_empty_paragraphs_dropped_and_text_kept(epub_bytes):
@@ -33,14 +33,14 @@ def test_empty_paragraphs_dropped_and_text_kept(epub_bytes):
     text = "".join(root.itertext())
     for s in ("Heading one", "Bold intro", "def hello():", "Bullet one", "Cell", "After the code."):
         assert s in text
-    paras = list(root.iter(X + "p"))
+    paras = [p for p in root.iter(X + "p") if "gde-code" not in (p.get("class") or "")]
     assert all("".join(p.itertext()).strip() or p.find(".//" + X + "img") is not None for p in paras)
 
 
 def test_code_lines_marked(epub_bytes):
     _, root, _ = cleaned_doc(epub_bytes)
     code = [p for p in root.iter(X + "p") if "gde-code" in (p.get("class") or "")]
-    assert ["".join(p.itertext()) for p in code] == ["def hello():", "    return 1"]
+    assert ["".join(p.itertext()) for p in code] == ["def hello():", "\u00a0", "    return 1"]
     assert "gde-code-last" in code[-1].get("class") and "gde-code-last" not in code[0].get("class")
 
 
@@ -71,3 +71,16 @@ def test_bad_page_left_alone():
     out, stats = clean_epub(buf.getvalue())
     assert zipfile.ZipFile(io.BytesIO(out)).read("OEBPS/broken.xhtml") == b"<html><body><p>unclosed"
     assert stats["documents"] == 0
+
+
+def test_blank_line_inside_code_kept_but_not_after_it():
+    import io as _io
+    page = (b'<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><head/><body>'
+            b'<p><span style="font-family:Courier">a</span></p>'
+            b'<p><span style="font-family:Courier"/></p>'
+            b'<p><span style="font-family:Courier">b</span></p>'
+            b'<p><span style="font-family:Courier"/></p>'
+            b'<p><span>prose</span></p></body></html>')
+    from gdriveepub.epubclean import clean_xhtml
+    out, stats = clean_xhtml(page)
+    assert stats["code_lines"] == 3 and stats["empty_paragraphs_removed"] == 1
