@@ -31,11 +31,9 @@ class GoogleError(Exception):
         self.body = body
 
 
-def auth_url(client_id: str, redirect_uri: str, state: str, login_hint: str = "") -> str:
+def auth_url(client_id: str, redirect_uri: str, state: str) -> str:
     q = {"client_id": client_id, "redirect_uri": redirect_uri, "response_type": "code", "scope": SCOPES,
          "access_type": "offline", "prompt": "consent", "state": state}
-    if login_hint:
-        q["login_hint"] = login_hint
     return AUTH_URL + "?" + urlencode(q)
 
 

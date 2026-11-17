@@ -38,8 +38,8 @@ All JSON; errors are `{"error": "<code>", "message": "..."}`.
 |---|---|---|
 | `GET /health` | none | `{"status":"ok","version":"x.y.z"}` |
 | `POST /pair/start` | none | `{"pair_id","poll_secret","url","expires_in":600}`; `url` is `<BASE_URL>/pair/<pair_id>`, shown as a QR code |
-| `GET /pair/<pair_id>` | none | 302 to Google sign-in with `state` signed for this pairing; 404 page if expired |
-| `GET /auth/callback` | Google | exchanges the code; 403 unless the id token's `aud` is our client, the email is verified and equals `OWNER_EMAIL`; stores the refresh token; approves the pairing |
+| `GET /pair/<pair_id>` | none | 302 to Google sign-in with `state` signed for this pairing (no `login_hint`, the account chooser is not prefilled); 404 page if expired |
+| `GET /auth/callback` | Google | exchanges the code; 403 unless the id token's `aud` is our client, the email is verified and its SHA-256 (lowercased) is in `OWNER_EMAIL_SHA256`; stores the refresh token and only the hash of the email; approves the pairing |
 | `GET /pair/<pair_id>/poll?secret=` | poll secret | `{"status":"pending"}`, then once `{"status":"approved","device_key":"..."}`; 403 `bad_secret`, 404 `pairing_expired` |
 | `GET /reauth` | none | Google sign-in without a pairing, to renew a dead refresh token |
 | `GET /api/status` | device key | `{"google":"ok"}` or `{"google":"reauth_needed","signin_url":...}` |
@@ -61,4 +61,4 @@ Google writes every style inline, and inline styles beat a stylesheet, so `epubc
 ## Tests and local runs
 
 - `cd gdriveepub-server && uv run pytest -q`: pure logic, the cleanup against a synthetic EPUB (`tests/fixtures/synthetic-epub/`, zipped by `tests/conftest.py`), and HTTP tests of the real app with Google faked through `httpx.MockTransport` (`tests/test_http.py`).
-- Local server against real Drive data: set `DEV_ACCESS_TOKEN` (a Google access token with Drive read access), `DEV_QUOTA_PROJECT` if the token is a gcloud user token, `DEV_DEVICE_KEY`, `BASE_URL`, `OWNER_EMAIL` and `STATE_FILE`, then `uv run gdriveepub` (port `PORT`, default 8080).
+- Local server against real Drive data: set `DEV_ACCESS_TOKEN` (a Google access token with Drive read access), `DEV_QUOTA_PROJECT` if the token is a gcloud user token, `DEV_DEVICE_KEY`, `BASE_URL`, `OWNER_EMAIL_SHA256` and `STATE_FILE`, then `uv run gdriveepub` (port `PORT`, default 8080).

@@ -5,6 +5,11 @@ font sizes in pt, blank lines become empty paragraphs, code-block lines are one
 paragraph each with full spacing, and images get fixed pixel sizes. Inline styles beat
 a stylesheet, so the spacing properties are removed from the inline styles and one
 small stylesheet is injected. Images, tables, links, lists and emphasis are kept.
+
+Google numbers lists with CSS counters (`li:before { content: counter(...) ". " }`). KOReader's
+engine does not evaluate counter(), so it showed only the ". ". The markers are computed here and
+written into each list item as text, and the li:before rules are removed. A horizontal rule is
+exported as an empty paragraph with a bottom border; it becomes an <hr> instead of being dropped.
 """
 
 from __future__ import annotations
@@ -29,10 +34,11 @@ DROP_CELL = {"width", "padding"}
 CSS = """
 /* injected by gdrive-epub */
 body { margin: 0; padding: 0 0.2em; line-height: 1.3; }
-p, li { margin: 0 0 0.45em 0; padding-top: 0; padding-bottom: 0; }
+p, li { margin: 0 0 0.6em 0; padding-top: 0; padding-bottom: 0; }
 li > p { margin: 0; }
-ul, ol { margin: 0.2em 0 0.5em 0; }
-li { margin-bottom: 0.15em; }
+ul, ol { margin: 0.2em 0 0.6em 0; list-style-type: none; }
+li { margin-bottom: 0.35em; }
+hr.gde-hr { border: 0; border-top: 1px solid #888; margin: 0.6em 0; height: 0; }
 h1 { font-size: 1.6em; margin: 0.6em 0 0.35em 0; }
 h2 { font-size: 1.35em; margin: 0.8em 0 0.3em 0; }
 h3 { font-size: 1.15em; margin: 0.7em 0 0.25em 0; }
@@ -103,6 +109,83 @@ def _blank_code_line(p) -> bool:
             and _tag(nxt) == "p" and _mono_spans(prev, True) and _mono_spans(nxt, True))
 
 
+MARKER_RULE = re.compile(r"\.(lst-[\w-]+)\s*>\s*li:before\s*\{([^}]*)\}")
+BEFORE_RULE = re.compile(r"[^{}]*li:before\s*\{[^}]*\}")
+CONTENT_TOKEN = re.compile(r'"((?:[^"\\]|\\.)*)"|counter\(\s*([\w-]+)\s*(?:,\s*([\w-]+)\s*)?\)')
+ROMAN = [(1000, "m"), (900, "cm"), (500, "d"), (400, "cd"), (100, "c"), (90, "xc"),
+         (50, "l"), (40, "xl"), (10, "x"), (9, "ix"), (5, "v"), (4, "iv"), (1, "i")]
+
+
+def _css_string(s: str) -> str:
+    s = re.sub(r"\\([0-9a-fA-F]{1,6}) ?", lambda m: chr(int(m.group(1), 16)), s)
+    return re.sub(r"\\(.)", r"\1", s)
+
+
+def _counter_text(n: int, style: str | None) -> str:
+    style = (style or "decimal").lower()
+    if style in ("lower-latin", "lower-alpha", "upper-latin", "upper-alpha"):
+        out = ""
+        while n > 0:
+            n, r = divmod(n - 1, 26)
+            out = chr(97 + r) + out
+        return out.upper() if style.startswith("upper") else out
+    if style in ("lower-roman", "upper-roman") and 0 < n < 4000:
+        out = ""
+        for v, sym in ROMAN:
+            while n >= v:
+                out, n = out + sym, n - v
+        return out.upper() if style.startswith("upper") else out
+    return str(n)
+
+
+def _marker_rules(css: str) -> dict[str, list]:
+    """Map a Google list class (lst-kix_<id>-<level>) to its li:before content tokens."""
+    rules = {}
+    for cls, body in MARKER_RULE.findall(css):
+        m = re.search(r"content\s*:\s*(.*)", body, re.S)
+        if m:
+            rules[cls] = [(_css_string(a), None, None) if c == "" else (None, c, st)
+                          for a, c, st in CONTENT_TOKEN.findall(m.group(1))]
+    return rules
+
+
+def _write_list_markers(body, css: str) -> int:
+    rules = _marker_rules(css)
+    counters: dict[str, int] = {}
+    written = 0
+    for lst in body.iter(f"{{{XHTML}}}ol", f"{{{XHTML}}}ul"):
+        classes = (lst.get("class") or "").split()
+        cls = next((c for c in classes if c in rules), None)
+        if cls is None:
+            continue
+        name = "lst-ctn-" + cls[len("lst-"):]
+        if "start" in classes or name not in counters:
+            try:
+                counters[name] = int(lst.get("start", "1")) - 1
+            except ValueError:
+                counters[name] = 0
+        for li in lst.findall("x:li", NS):
+            counters[name] += 1
+            text = "".join(lit if lit is not None else _counter_text(counters.get(c, 0), st)
+                           for lit, c, st in rules[cls]).strip()
+            if not text:
+                continue
+            span = etree.Element(f"{{{XHTML}}}span")
+            span.set("class", "gde-marker")
+            span.text = text + " "
+            span.tail, li.text = li.text, None
+            li.insert(0, span)
+            written += 1
+    return written
+
+
+def _is_rule_paragraph(p) -> bool:
+    """Docs exports a horizontal rule as an empty paragraph with a visible bottom or top border."""
+    st = dict(_parse_style(p.get("style", "")))
+    return any(st.get(f"border-{side}-style", "none") not in ("none", "hidden")
+               and st.get(f"border-{side}-width", "1pt") not in ("0", "0pt", "0px") for side in ("bottom", "top"))
+
+
 def clean_xhtml(data: bytes) -> tuple[bytes, dict]:
     parser = etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=True)
     root = etree.fromstring(data, parser)
@@ -111,8 +194,17 @@ def clean_xhtml(data: bytes) -> tuple[bytes, dict]:
     if body is None:
         return data, stats
 
+    head = root.find("x:head", NS)
+    google_css = "".join(st.text or "" for st in head.findall("x:style", NS)) if head is not None else ""
+    _write_list_markers(body, google_css)
+
     for p in list(body.iter(f"{{{XHTML}}}p")):
-        if _is_empty_block(p) and _blank_code_line(p):
+        if _is_empty_block(p) and _is_rule_paragraph(p):
+            hr = etree.Element(f"{{{XHTML}}}hr")
+            hr.set("class", "gde-hr")
+            hr.tail = p.tail
+            p.getparent().replace(p, hr)
+        elif _is_empty_block(p) and _blank_code_line(p):
             _add_class(p, "gde-code")
             span = next(p.iter(f"{{{XHTML}}}span"))
             span.text = "\u00a0"
@@ -164,11 +256,11 @@ def clean_xhtml(data: bytes) -> tuple[bytes, dict]:
             _add_class(p, "gde-code-last")
     stats["code_lines"] = len(code)
 
-    head = root.find("x:head", NS)
     if head is not None:
         for st in head.findall("x:style", NS):
             if st.text:
                 st.text = re.sub(r"@import\s+url\([^)]*\)\s*;?", "", st.text)  # remote fonts: no network on the Kindle
+                st.text = BEFORE_RULE.sub("", st.text)  # markers are now real text
         style = etree.SubElement(head, f"{{{XHTML}}}style")
         style.set("type", "text/css")
         style.text = CSS

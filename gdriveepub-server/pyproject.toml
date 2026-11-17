@@ -1,6 +1,6 @@
 [project]
 name = "gdriveepub"
-version = "0.1.0"
+version = "0.2.0"
 description = "Cloud Run service that lists Google Drive files and serves Google Docs as cleaned EPUBs to a KOReader plugin"
 requires-python = ">=3.12"
 dependencies = [

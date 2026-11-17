@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import zipfile
 from urllib.parse import parse_qs, urlparse
@@ -20,12 +21,13 @@ from conftest import FakeGoogle
 
 BASE = "https://gdrive-epub.example.test"
 OWNER = "owner@example.com"
+SECOND = "second@example.com"
 CLIENT_ID = "test-client.apps.example"
 
 
 class Env:
     def __init__(self, epub: bytes):
-        self.settings = Settings(base_url=BASE, owner_email=OWNER, client_id=CLIENT_ID, client_secret="test-secret")
+        self.settings = Settings(base_url=BASE, owner_email_sha256=frozenset({hashlib.sha256(OWNER.encode()).hexdigest(), hashlib.sha256(SECOND.encode()).hexdigest()}), client_id=CLIENT_ID, client_secret="test-secret")
         self.store = MemoryStore()
         self.fake = FakeGoogle(CLIENT_ID, OWNER, epub)
         google = Google(CLIENT_ID, "test-secret", transport=httpx.MockTransport(self.fake))
@@ -71,7 +73,7 @@ def test_pair_page_redirects_to_google_with_bound_state(env):
     q = {k: v[0] for k, v in parse_qs(loc.query).items()}
     assert loc.netloc == "accounts.google.com"
     assert q["client_id"] == CLIENT_ID and q["redirect_uri"] == BASE + "/auth/callback"
-    assert "drive.readonly" in q["scope"] and q["access_type"] == "offline" and q["login_hint"] == OWNER
+    assert "drive.readonly" in q["scope"] and q["access_type"] == "offline" and "login_hint" not in q
     assert pairing.verify_state(pairing.state_key("test-secret"), q["state"]) == "pair:" + start["pair_id"]
 
 
@@ -88,9 +90,25 @@ def test_pair_flow_end_to_end(env):
     assert first["status"] == "approved" and len(first["device_key"]) > 30
     assert poll(start["poll_secret"]).status_code == 404  # key handed out once
     state_now = env.store.read()
-    assert state_now["google"]["refresh_token"] == "rt-abc" and state_now["google"]["email"] == OWNER
+    assert state_now["google"]["refresh_token"] == "rt-abc" and state_now["google"]["email_sha256"] == hashlib.sha256(OWNER.encode()).hexdigest()
+    assert OWNER not in str(state_now)  # the signed-in email is stored only as a hash
     assert first["device_key"] not in str(state_now)  # only its hash is stored
     assert env.client.get("/api/status", headers=auth(first["device_key"])).json() == {"google": "ok"}
+
+
+def test_second_allowed_account_and_case(env):
+    env.fake.claims.update({"email": "Second@Example.com"})
+    start = env.client.post("/pair/start").json()
+    loc = env.client.get(f"/pair/{start['pair_id']}").headers["location"]
+    state = parse_qs(urlparse(loc).query)["state"][0]
+    r = env.client.get("/auth/callback", params={"code": "abc", "state": state})
+    assert r.status_code == 200 and "Kindle paired" in r.text
+    assert env.store.read()["google"]["email_sha256"] == hashlib.sha256(SECOND.encode()).hexdigest()
+
+
+def test_reauth_has_no_login_hint(env):
+    r = env.client.get("/reauth")
+    assert r.status_code == 302 and "login_hint" not in r.headers["location"]
 
 
 def test_unknown_pairing(env):
