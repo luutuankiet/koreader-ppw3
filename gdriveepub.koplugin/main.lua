@@ -1,0 +1,414 @@
+--[[--
+Google Drive: list, search and download your Google Docs (as EPUB), PDFs
+and EPUBs through your own gdrive-epub server. Tools > Google Drive.
+
+The server URL is a setting. The Kindle pairs with the server once by
+scanning a QR code with a phone; the server then keeps the Google sign-in.
+]]
+
+local ButtonDialog = require("ui/widget/buttondialog")
+local ConfirmBox = require("ui/widget/confirmbox")
+local DataStorage = require("datastorage")
+local InfoMessage = require("ui/widget/infomessage")
+local InputDialog = require("ui/widget/inputdialog")
+local LuaSettings = require("luasettings")
+local NetworkMgr = require("ui/network/manager")
+local UIManager = require("ui/uimanager")
+local WidgetContainer = require("ui/widget/container/widgetcontainer")
+local filemanagerutil = require("apps/filemanager/filemanagerutil")
+local json = require("json")
+local lfs = require("libs/libkoreader-lfs")
+local logger = require("logger")
+local _ = require("gettext")
+
+local Api = require("gdriveepub_api")
+local Format = require("gdriveepub_format")
+local Http = require("gdriveepub_http")
+local ListWidget = require("gdriveepub_listwidget")
+local QrScreen = require("gdriveepub_qrscreen")
+local State = require("gdriveepub_state")
+
+local POLL_SECONDS = 3
+local LIST_TIMEOUT = 30
+local DOWNLOAD_BLOCK_TIMEOUT = 30
+local DOWNLOAD_TOTAL_TIMEOUT = 300
+
+local GDrive = WidgetContainer:extend{
+    name = "gdriveepub",
+    is_doc_only = false,
+}
+
+function GDrive:init()
+    self.settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/gdriveepub.lua")
+    self.http = Http.new{ scheduleIn = function(s, f) UIManager:scheduleIn(s, f) end }
+    self.state = State.new()
+    self.ui.menu:registerToMainMenu(self)
+end
+
+function GDrive:baseUrl() return Api.normaliseBaseUrl(self.settings:readSetting("server_url")) end
+function GDrive:deviceKey() return self.settings:readSetting("device_key") end
+
+function GDrive:setDeviceKey(key)
+    if key then self.settings:saveSetting("device_key", key) else self.settings:delSetting("device_key") end
+    self.settings:flush()
+end
+
+function GDrive:addToMainMenu(menu_items)
+    menu_items.gdriveepub = {
+        text = _("Google Drive"),
+        sorting_hint = "tools",
+        sub_item_table = {
+            { text = _("Open"), callback = function() self:open() end },
+            {
+                text_func = function()
+                    local u = self:baseUrl()
+                    return u and (_("Server URL: ") .. u) or _("Server URL: not set")
+                end,
+                keep_menu_open = true,
+                callback = function(menu) self:editServerUrl(function() if menu then menu:updateItems() end end) end,
+            },
+            { text = _("Pair again"), callback = function() self:setDeviceKey(nil); self:open() end },
+            { text = _("Check connection"), callback = function() self:checkConnection() end },
+        },
+    }
+end
+
+function GDrive:info(text, timeout)
+    UIManager:show(InfoMessage:new{ text = text, timeout = timeout })
+end
+
+function GDrive:editServerUrl(done)
+    local dialog
+    dialog = InputDialog:new{
+        title = _("Google Drive server URL"),
+        input = self.settings:readSetting("server_url") or "https://",
+        input_hint = "https://your-server.example",
+        description = _("The address of your gdrive-epub server."),
+        buttons = { {
+            { text = _("Cancel"), id = "close", callback = function() UIManager:close(dialog) end },
+            { text = _("Save"), is_enter_default = true, callback = function()
+                local url = Api.normaliseBaseUrl(dialog:getInputText())
+                if not url then
+                    self:info(_("That is not a URL. It must start with https:// or http://."))
+                    return
+                end
+                UIManager:close(dialog)
+                if url ~= self:baseUrl() then self:setDeviceKey(nil) end
+                self.settings:saveSetting("server_url", url)
+                self.settings:flush()
+                if done then done(url) end
+            end },
+        } },
+    }
+    UIManager:show(dialog)
+    dialog:onShowKeyboard()
+end
+
+--- One request with a "Working..." message. `cb(parsed, res)` only on success
+--- unless `raw` is set; errors go to handleError with `retry`.
+function GDrive:request(req, opts, cb)
+    NetworkMgr:runWhenOnline(function()
+        local msg = InfoMessage:new{ text = opts.message or _("Loading…"), dismissable = false }
+        if not opts.quiet then UIManager:show(msg) UIManager:forceRePaint() end
+        self.http(req, function(res)
+            if not opts.quiet then UIManager:close(msg) end
+            local parsed = Api.parse(res, json.decode)
+            if opts.raw or parsed.ok then return cb(parsed, res) end
+            self:handleError(parsed, opts.retry)
+        end)
+    end)
+end
+
+function GDrive:handleError(parsed, retry)
+    logger.warn("gdriveepub: request failed", parsed.status, parsed.error, parsed.message)
+    local e = parsed.error
+    if e == "device_unauthorized" then
+        self:setDeviceKey(nil)
+        self:info(_("This Kindle is no longer paired with the server. Pair it again."), 3)
+        self:startPairing(retry)
+    elseif e == "google_reauth" then
+        self:showReauth(parsed.signin_url, retry)
+    elseif e == "too_large" then
+        self:info(_("Google cannot export this document: it is larger than 10 MB."))
+    elseif e == "network" then
+        self:info(_("Cannot reach the server: ") .. tostring(parsed.message))
+    else
+        self:info(_("Server error: ") .. tostring(parsed.message or e))
+    end
+end
+
+function GDrive:open()
+    if not self:baseUrl() then
+        return self:editServerUrl(function() self:open() end)
+    end
+    if not self:deviceKey() then
+        return self:startPairing(function() self:open() end)
+    end
+    self:showList()
+end
+
+-- Pairing ---------------------------------------------------------------
+
+function GDrive:stopPolling()
+    if self.poll_fn then UIManager:unschedule(self.poll_fn) self.poll_fn = nil end
+end
+
+function GDrive:startPairing(after)
+    local base = self:baseUrl()
+    if not base then return self:editServerUrl(function() self:startPairing(after) end) end
+    self:request(Api.pairStartRequest(base), { message = _("Starting pairing…") }, function(parsed)
+        if not Api.validPairing(parsed) then
+            return self:info(_("The server sent a pairing answer this plugin does not understand."))
+        end
+        self:showPairing(parsed.data, after)
+    end)
+end
+
+function GDrive:showPairing(pairing, after)
+    local base = self:baseUrl()
+    local screen
+    local function restart()
+        self:stopPolling()
+        UIManager:close(screen)
+        self:startPairing(after)
+    end
+    screen = QrScreen:new{
+        heading = _("Pair this Kindle"),
+        text = _("Scan with your phone, then sign in with your Google work account."),
+        url = pairing.url,
+        status = _("Waiting for your phone…"),
+        buttons = {
+            { text = _("Cancel"), callback = function() self:stopPolling() UIManager:close(screen) end },
+            { text = _("New code"), callback = restart },
+        },
+        on_close = function() self:stopPolling() end,
+    }
+    UIManager:show(screen)
+    local deadline = os.time() + (tonumber(pairing.expires_in) or 600)
+    local function poll()
+        self.http(Api.pairPollRequest(base, pairing.pair_id, pairing.poll_secret), function(res)
+            if screen._closed then return end
+            local result, key = Api.pairPollResult(Api.parse(res, json.decode))
+            if result == "approved" then
+                self:setDeviceKey(key)
+                UIManager:close(screen)
+                self:info(_("Kindle paired."), 2)
+                if after then UIManager:scheduleIn(0.5, after) end
+            elseif result == "expired" or os.time() > deadline then
+                screen:setStatus(_("This code expired. Tap New code."))
+            else
+                if result == "error" then screen:setStatus(_("Cannot reach the server, still trying…")) end
+                UIManager:scheduleIn(POLL_SECONDS, self.poll_fn)
+            end
+        end)
+    end
+    self.poll_fn = poll
+    local orig_close = screen.onCloseWidget
+    screen.onCloseWidget = function(s) s._closed = true self:stopPolling() return orig_close(s) end
+    UIManager:scheduleIn(POLL_SECONDS, self.poll_fn)
+end
+
+function GDrive:showReauth(signin_url, retry)
+    local screen
+    screen = QrScreen:new{
+        heading = _("Sign in again on your phone"),
+        text = _("Google ended the server's sign-in. Scan with your phone and sign in, then tap Done."),
+        url = signin_url or ((self:baseUrl() or "") .. "/reauth"),
+        status = "",
+        buttons = {
+            { text = _("Cancel"), callback = function() UIManager:close(screen) end },
+            { text = _("Done, retry"), callback = function()
+                UIManager:close(screen)
+                if retry then retry() end
+            end },
+        },
+    }
+    UIManager:show(screen)
+end
+
+function GDrive:checkConnection()
+    local base = self:baseUrl()
+    if not base then return self:info(_("Set the server URL first.")) end
+    self:request(Api.healthRequest(base), { message = _("Checking…"), retry = function() self:checkConnection() end }, function(h)
+        local version = tostring(h.data.version or "?")
+        if not self:deviceKey() then
+            return self:info(_("Server is up (version ") .. version .. _("). This Kindle is not paired yet."))
+        end
+        self:request(Api.statusRequest(base, self:deviceKey()), { retry = function() self:checkConnection() end }, function(s)
+            if s.data.google == "reauth_needed" then
+                return self:showReauth(s.data.signin_url, function() self:checkConnection() end)
+            end
+            self:info(_("Server is up (version ") .. version .. _("), paired, Google sign-in OK."))
+        end)
+    end)
+end
+
+-- List ------------------------------------------------------------------
+
+function GDrive:showList()
+    local offset = Format.localOffset()
+    self.list = ListWidget:new{
+        subtitle = State.subtitle(self.state),
+        files = self.state.files, more = State.hasMore(self.state),
+        empty_text = _("Loading…"),
+        meta = function(f) return Format.metaLine(f, offset) end,
+        on_tap = function(f) self:download(f, false) end,
+        on_hold = function(f) self:showDetails(f) end,
+        on_action = function(name) self:onListAction(name) end,
+    }
+    UIManager:show(self.list)
+    self:load(false)
+end
+
+function GDrive:load(append)
+    local base, key = self:baseUrl(), self:deviceKey()
+    local token = append and self.state.next_token or nil
+    if not append then State.resetFiles(self.state) end
+    local req = Api.listRequest(base, key, State.params(self.state, token))
+    req.timeout = LIST_TIMEOUT
+    self:request(req, { retry = function() self:load(append) end }, function(parsed)
+        local files, next_token = Api.files(parsed.data)
+        local before = #self.state.files
+        State.addPage(self.state, files, next_token)
+        if not self.list then return end
+        self.list.empty_text = _("No files match.")
+        local page = self.list.page
+        self.list:setFiles(self.state.files, State.hasMore(self.state), State.subtitle(self.state), append)
+        if append and #self.state.files > before then self.list:showPage(page + 1) end
+    end)
+end
+
+function GDrive:onListAction(name)
+    if name == "close" then
+        UIManager:close(self.list)
+        self.list = nil
+    elseif name == "recent" then
+        State.setRecent(self.state) self:load(false)
+    elseif name == "search" then
+        self:askSearch()
+    elseif name == "filter" then
+        self:showFilter()
+    elseif name == "sort" then
+        self:showSort()
+    elseif name == "more" then
+        self:load(true)
+    end
+end
+
+function GDrive:askSearch()
+    local dialog
+    dialog = InputDialog:new{
+        title = _("Search Google Drive"),
+        input = self.state.q or "",
+        input_hint = _("Keywords in the title or text"),
+        buttons = { {
+            { text = _("Cancel"), id = "close", callback = function() UIManager:close(dialog) end },
+            { text = _("Search"), is_enter_default = true, callback = function()
+                local q = dialog:getInputText()
+                UIManager:close(dialog)
+                State.setSearch(self.state, q)
+                self:load(false)
+            end },
+        } },
+    }
+    UIManager:show(dialog)
+    dialog:onShowKeyboard()
+end
+
+local function mark(label, on) return on and ("\226\156\147 " .. label) or label end
+
+function GDrive:showFilter()
+    local dialog
+    local buttons = {}
+    for _i, which in ipairs({ "modified_within", "created_within" }) do
+        table.insert(buttons, { { text = which == "modified_within" and _("Updated within") or _("Created within"), enabled = false, callback = function() end } })
+        local row = {}
+        for _j, v in ipairs(State.WITHIN) do
+            local label = v == "" and _("Any") or v
+            table.insert(row, { text = mark(label, self.state[which] == v), callback = function()
+                UIManager:close(dialog)
+                State.setFilter(self.state, which, v)
+                self:load(false)
+            end })
+        end
+        table.insert(buttons, row)
+    end
+    table.insert(buttons, { { text = _("Clear filters"), callback = function()
+        UIManager:close(dialog) State.clearFilters(self.state) self:load(false)
+    end } })
+    dialog = ButtonDialog:new{ title = _("Filter"), title_align = "center", buttons = buttons }
+    UIManager:show(dialog)
+end
+
+function GDrive:showSort()
+    local dialog
+    local buttons = {}
+    for _i, sort in ipairs(State.SORTS) do
+        table.insert(buttons, { { text = mark(State.SORT_LABEL[sort], self.state.sort == sort), callback = function()
+            UIManager:close(dialog) State.setSort(self.state, sort) self:load(false)
+        end } })
+    end
+    dialog = ButtonDialog:new{ title = _("Sort by"), title_align = "center", buttons = buttons }
+    UIManager:show(dialog)
+end
+
+function GDrive:showDetails(f)
+    local dialog
+    dialog = ButtonDialog:new{
+        title = Format.details(f, Format.localOffset()),
+        title_align = "left",
+        buttons = {
+            { { text = _("Download"), callback = function() UIManager:close(dialog) self:download(f, false) end },
+              { text = _("Download & open"), callback = function() UIManager:close(dialog) self:download(f, true) end } },
+            { { text = _("Close"), callback = function() UIManager:close(dialog) end } },
+        },
+    }
+    UIManager:show(dialog)
+end
+
+-- Download --------------------------------------------------------------
+
+function GDrive:downloadDir()
+    local home = G_reader_settings:readSetting("home_dir") or filemanagerutil.getDefaultDir()
+    return Format.joinPath(home, "GDrive")
+end
+
+local function openBook(ui, path)
+    if filemanagerutil.openFile then
+        filemanagerutil.openFile(ui, path)
+    else
+        ui:openFile(path)
+    end
+end
+
+function GDrive:download(f, open_after)
+    local dir = self:downloadDir()
+    if lfs.attributes(dir, "mode") ~= "directory" then lfs.mkdir(dir) end
+    local name = Format.fileName(f)
+    local final = Format.joinPath(dir, name)
+    local part = Format.joinPath(dir, "." .. name .. ".part")
+    local req = Api.downloadRequest(self:baseUrl(), self:deviceKey(), f.id)
+    req.sink_path, req.timeout, req.total_timeout = part, DOWNLOAD_BLOCK_TIMEOUT, DOWNLOAD_TOTAL_TIMEOUT
+    self:request(req, { raw = true, message = _("Downloading…") .. "\n" .. f.name,
+            retry = function() self:download(f, open_after) end }, function(parsed, res)
+        if not (res and res.status and res.status >= 200 and res.status < 300) then
+            os.remove(part)
+            return self:handleError(parsed, function() self:download(f, open_after) end)
+        end
+        os.remove(final)
+        local ok, err = os.rename(part, final)
+        if not ok then return self:info(_("Could not save the file: ") .. tostring(err)) end
+        local function doOpen()
+            if self.list then UIManager:close(self.list) self.list = nil end
+            openBook(self.ui, final)
+        end
+        if open_after then return doOpen() end
+        UIManager:show(ConfirmBox:new{
+            text = _("Saved to ") .. "GDrive/" .. name .. "\n\n" .. _("Open now?"),
+            ok_text = _("Open"), cancel_text = _("Later"),
+            ok_callback = doOpen,
+        })
+    end)
+end
+
+return GDrive
