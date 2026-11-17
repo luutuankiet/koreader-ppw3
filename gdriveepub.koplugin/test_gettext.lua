@@ -7,7 +7,7 @@ local function check(ok, msg)
     if ok then pass = pass + 1 else fail = fail + 1; print("FAIL: " .. msg) end
 end
 
-local files = { "main.lua", "gdriveepub_listwidget.lua", "gdriveepub_qrscreen.lua" }
+local files = { "main.lua", "gdriveepub_listwidget.lua", "gdriveepub_qrscreen.lua", "gdriveepub_files.lua" }
 for _i, name in ipairs(files) do
     local fh = assert(io.open(name, "r"))
     local src = fh:read("*a"); fh:close()

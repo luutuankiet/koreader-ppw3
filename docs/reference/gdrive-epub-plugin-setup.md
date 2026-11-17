@@ -1,6 +1,6 @@
 ---
 title: Setting up the Google Drive plugin on a Kindle
-summary: install the gdriveepub plugin through Plugin packages, set the server URL, pair by QR code, and sign in again when Google asks (about once a week)
+summary: install the gdriveepub plugin through Plugin packages, set the server URL, pair by QR code, delete downloaded files from the Kindle, and sign in again when Google asks (about once a week)
 verified: 2026-11-17
 ---
 
@@ -45,14 +45,38 @@ to Google directly.
   **Open** to read it now. Long-press a file for its details.
 - Google refuses to export documents larger than 10 MB; the plugin says so.
 
-## 5. Sign in again (about weekly)
+## 5. Clean up downloaded files
+
+1. Open **Tools > Google Drive > Downloaded files** (it also works from the
+   reader's menu). It lists every book in `GDrive/`, newest first, with its
+   size and download date. Unfinished downloads (`*.part`) are hidden.
+2. Tap files to select them, or use **Select all** / **Select none**.
+3. **Delete** asks once ("Delete 2 files and their reading data?") and then
+   removes each file with its reading data: progress, highlights and
+   bookmarks in the book's `.sdr` folder.
+4. The result names any file it skipped and why.
+
+What to expect:
+
+- **The book you are reading is never deleted**; it is skipped with "open in
+  the reader". Close it first.
+- **Same-named books share reading data.** KOReader keeps `Book.epub` and
+  `Book.pdf` in one `Book.sdr` folder, so deleting one keeps the folder for
+  the other; the folder goes once nothing else uses it.
+- **History** follows KOReader's own setting for deleted files: the entry is
+  removed, or kept and dimmed, exactly as when you delete from the file
+  browser. Collections drop the file.
+- Deleting only frees space on the Kindle. Nothing changes in Google Drive,
+  and you can download the file again at any time.
+
+## 6. Sign in again (about weekly)
 
 Google ends the server's sign-in from time to time (roughly every 7 days for
 an app in testing mode). When that happens any list or download shows
 **Sign in again on your phone** with a QR code. Scan it, sign in, then tap
 **Done, retry**. The device does not need to pair again.
 
-## Known issues (0.1.0)
+## Known issues (0.1.1)
 
 - Images in converted Google Docs are followed by a stray visible link.
 - Numbered lists lose their numbers in converted Google Docs.
