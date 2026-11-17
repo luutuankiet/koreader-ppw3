@@ -45,6 +45,9 @@ class FakeGoogle:
         self.epub = epub
         self.dead_refresh = set()
         self.export_too_large = False
+        self.export_link_status = 200
+        self.media = b"%PDF-"
+        self.link_auth_seen: list[str | None] = []  # Authorization header on the signed download host
         self.files = {
             "doc1": {"id": "doc1", "name": "Plan: Q1/Q2 ünïcode", "mimeType": "application/vnd.google-apps.document",
                      "modifiedTime": "2026-11-01T10:00:00.000Z", "createdTime": "2026-10-01T10:00:00.000Z",
@@ -67,6 +70,13 @@ class FakeGoogle:
             if form["refresh_token"] in self.dead_refresh:
                 return httpx.Response(400, json={"error": "invalid_grant"})
             return httpx.Response(200, json={"access_token": "at", "expires_in": 3600})
+        if url.host == "docs.google.com":  # exportLinks URL: redirects to a signed download host
+            if self.export_link_status != 200:
+                return httpx.Response(self.export_link_status, text="nope")
+            return httpx.Response(307, headers={"location": "https://doc-0.googleusercontent.example/export/signed?x=1"})
+        if url.host == "doc-0.googleusercontent.example":
+            self.link_auth_seen.append(request.headers.get("authorization"))
+            return httpx.Response(200, content=self.epub)
         path = url.path.removeprefix("/drive/v3")
         if path == "/files":
             listed = [f for f in self.files.values()]
@@ -80,5 +90,15 @@ class FakeGoogle:
                 return httpx.Response(403, json={"error": {"errors": [{"reason": "exportSizeLimitExceeded"}]}})
             return httpx.Response(200, content=self.epub)
         if url.params.get("alt") == "media":
-            return httpx.Response(200, content=b"%PDF-", headers={"content-length": "5"})
+            return httpx.Response(200, content=self.media, headers={"content-length": str(len(self.media))})
         return httpx.Response(200, json=f)
+
+    def add_export_link(self, file_id: str = "doc1", size: int | None = None) -> None:
+        f = self.files[file_id]
+        f["exportLinks"] = {"application/epub+zip": "https://docs.google.com/feeds/download/documents/export/"
+                                                    f"Export?id={file_id}&exportFormat=epub"}
+        if size is not None:
+            f["size"] = str(size)
+
+    def hits(self, host: str, path_suffix: str = "") -> int:
+        return sum(1 for r in self.requests if r.url.host == host and r.url.path.endswith(path_suffix))

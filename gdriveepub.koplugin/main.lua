@@ -31,8 +31,10 @@ local State = require("gdriveepub_state")
 
 local POLL_SECONDS = 3
 local LIST_TIMEOUT = 30
-local DOWNLOAD_BLOCK_TIMEOUT = 30
-local DOWNLOAD_TOTAL_TIMEOUT = 300
+-- Google can take over 30 s before the first byte of a large document, and the
+-- server cleans the whole EPUB before it sends anything.
+local DOWNLOAD_BLOCK_TIMEOUT = 120
+local DOWNLOAD_TOTAL_TIMEOUT = 1800
 
 local GDrive = WidgetContainer:extend{
     name = "gdriveepub",
@@ -131,7 +133,7 @@ function GDrive:handleError(parsed, retry)
     elseif e == "google_reauth" then
         self:showReauth(parsed.signin_url, retry)
     elseif e == "too_large" then
-        self:info(_("Google cannot export this document: it is larger than 10 MB."))
+        self:info(_("Google could not export this document."))
     elseif e == "network" then
         self:info(_("Cannot reach the server: ") .. tostring(parsed.message))
     else
@@ -391,7 +393,7 @@ function GDrive:download(f, open_after)
     local part = Format.joinPath(dir, "." .. name .. ".part")
     local req = Api.downloadRequest(self:baseUrl(), self:deviceKey(), f.id)
     req.sink_path, req.timeout, req.total_timeout = part, DOWNLOAD_BLOCK_TIMEOUT, DOWNLOAD_TOTAL_TIMEOUT
-    self:request(req, { raw = true, message = _("Downloading…") .. "\n" .. f.name,
+    self:request(req, { raw = true, message = _("Downloading…") .. "\n" .. f.name .. "\n" .. _("Large documents can take a minute."),
             retry = function() self:download(f, open_after) end }, function(parsed, res)
         if not (res and res.status and res.status >= 200 and res.status < 300) then
             os.remove(part)

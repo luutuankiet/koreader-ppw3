@@ -4,17 +4,21 @@ from __future__ import annotations
 
 import html
 import logging
+import os
+import tempfile
 import time
 from datetime import datetime, timezone
 
 from starlette.applications import Starlette
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from starlette.routing import Route
 
 from . import __version__, driveq, names, pairing
 from .config import Settings, email_hash
-from .google import Google, GoogleError, ReauthNeeded, TooLarge, auth_url, id_token_claims
+from .epubclean import clean_epub_file
+from .google import EPUB, EXPORT_LIMIT, Google, GoogleError, ReauthNeeded, TooLarge, auth_url, id_token_claims
 from .store import Store
 
 log = logging.getLogger("gdriveepub")
@@ -29,6 +33,49 @@ def page(title: str, text: str, status: int = 200) -> HTMLResponse:
             f"<body style='font-family:sans-serif;max-width:30em;margin:3em auto;padding:0 1em'>"
             f"<h2>{html.escape(title)}</h2><p>{html.escape(text)}</p></body>")
     return HTMLResponse(body, status_code=status)
+
+
+CHUNK = 1024 * 1024
+
+
+def _tmp(prefix: str) -> str:
+    fd, path = tempfile.mkstemp(prefix=prefix, suffix=".epub")
+    os.close(fd)
+    return path
+
+
+def _remove(*paths: str) -> None:
+    for path in paths:
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+
+
+def _clean_to_file(raw_path: str, fid: str) -> str:
+    """Clean `raw_path` into a new temp file and delete the raw one; on any cleanup error
+    keep serving Google's export unchanged. Returns the path to serve."""
+    out = _tmp("gde-out-")
+    try:
+        stats = clean_epub_file(raw_path, out)
+        log.info("cleaned %s: %s", fid, stats)
+    except Exception:  # never fail a download because cleanup choked
+        log.exception("cleanup failed for %s; serving Google's export", fid)
+        _remove(out)
+        return raw_path
+    _remove(raw_path)
+    return out
+
+
+async def _stream_file(path: str):
+    """Yield the file in chunks, then delete it. No Content-Length is sent, so the response
+    goes out chunked: Cloud Run caps responses that are not streamed at 32 MiB."""
+    try:
+        with open(path, "rb") as fh:
+            while chunk := fh.read(CHUNK):
+                yield chunk
+    finally:
+        _remove(path)
 
 
 def create_app(settings: Settings, store: Store, google: Google | None = None, now=time.time) -> Starlette:
@@ -153,6 +200,40 @@ def create_app(settings: Settings, store: Store, google: Google | None = None, n
             items = driveq.sort_page(items, args.get("sort") or ("viewed" if view == "recent" else "modified"))
         return JSONResponse({"files": items, "next_page_token": data.get("nextPageToken")})
 
+    async def doc_epub(tok: str, fid: str, meta: dict, headers: dict):
+        """Google Doc as a cleaned EPUB, any size.
+
+        `files.export` stops at 10 MB (403 exportSizeLimitExceeded); the file's EPUB export
+        link has no such cap. A doc whose Drive size is already past 10 MB goes straight to the
+        link (the doomed export alone takes about 15 s to fail); otherwise the export is tried
+        first and the link is the fallback. Both land in a temp file, never a second copy in memory.
+        """
+        link = (meta.get("exportLinks") or {}).get(EPUB)
+        size = int(meta.get("size") or 0)
+        raw = _tmp("gde-raw-")
+        t0 = time.monotonic()
+        try:
+            with open(raw, "wb") as fh:
+                via = "export"
+                try:
+                    if link and size > EXPORT_LIMIT:
+                        raise TooLarge()
+                    fh.write(await g.export_epub(tok, fid))
+                except TooLarge:
+                    if not link:
+                        _remove(raw)
+                        return err(413, "too_large", "Google cannot export this document")
+                    via = "export_link"
+                    fh.seek(0)
+                    fh.truncate()
+                    await g.download_export_link(tok, link, fh)
+            log.info("doc %s via %s: %d bytes in %.1f s", fid, via, os.path.getsize(raw), time.monotonic() - t0)
+            path = await run_in_threadpool(_clean_to_file, raw, fid)
+        except BaseException:
+            _remove(raw)
+            raise
+        return StreamingResponse(_stream_file(path), media_type=EPUB, headers=headers)
+
     @api
     async def download(request):
         fid = request.path_params["file_id"]
@@ -166,21 +247,8 @@ def create_app(settings: Settings, store: Store, google: Google | None = None, n
                    "X-File-Name": names.header_value(fname), "X-Modified-Time": meta.get("modifiedTime", "")}
         ctype = "application/pdf" if kind == "pdf" else "application/epub+zip"
         if kind == "doc":
-            try:
-                raw = await g.export_epub(tok, fid)
-            except TooLarge:
-                return err(413, "too_large", "Google cannot export documents over 10 MB")
-            from .epubclean import clean_epub
-            try:
-                body, stats = clean_epub(raw)
-                log.info("cleaned %s: %s", fid, stats)
-            except Exception:  # never fail a download because cleanup choked
-                log.exception("cleanup failed for %s; serving Google's export", fid)
-                body = raw
-            return Response(body, media_type=ctype, headers=headers)
-        upstream = await g.open_media(tok, fid)
-        if upstream.headers.get("content-length"):
-            headers["Content-Length"] = upstream.headers["content-length"]
+            return await doc_epub(tok, fid, meta, headers)
+        upstream = await g.open_media(tok, fid)  # no Content-Length passed on: see _stream_file
 
         async def stream():
             try:

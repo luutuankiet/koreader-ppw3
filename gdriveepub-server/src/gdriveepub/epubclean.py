@@ -267,18 +267,24 @@ def clean_xhtml(data: bytes) -> tuple[bytes, dict]:
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8"), stats
 
 
-def clean_epub(data: bytes) -> tuple[bytes, dict]:
-    src = zipfile.ZipFile(io.BytesIO(data))
-    out = io.BytesIO()
+# Already compressed; deflating them again costs seconds on a big doc and saves almost nothing.
+STORED_EXT = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+
+
+def clean_epub_file(src, dst) -> dict:
+    """Clean the EPUB at `src` (path or seekable binary file) into `dst` (path or binary file).
+
+    Entries are read and written one at a time, so only one entry is in memory at once.
+    """
     totals = {"empty_paragraphs_removed": 0, "code_lines": 0, "images": 0, "documents": 0}
-    with zipfile.ZipFile(out, "w") as dst:
-        names = src.namelist()
+    with zipfile.ZipFile(src) as zsrc, zipfile.ZipFile(dst, "w") as zdst:
+        names = zsrc.namelist()
         if "mimetype" in names:  # must be first and stored uncompressed
-            dst.writestr(zipfile.ZipInfo("mimetype"), src.read("mimetype"), compress_type=zipfile.ZIP_STORED)
-        for info in src.infolist():
+            zdst.writestr(zipfile.ZipInfo("mimetype"), zsrc.read("mimetype"), compress_type=zipfile.ZIP_STORED)
+        for info in zsrc.infolist():
             if info.filename == "mimetype":
                 continue
-            body = src.read(info.filename)
+            body = zsrc.read(info.filename)
             low = info.filename.lower()
             if low.endswith((".xhtml", ".html", ".htm")) and not low.endswith("nav.xhtml"):
                 try:
@@ -288,5 +294,13 @@ def clean_epub(data: bytes) -> tuple[bytes, dict]:
                         totals[k] += v
                 except etree.XMLSyntaxError:
                     pass  # leave a page we cannot parse exactly as Google wrote it
-            dst.writestr(info.filename, body, compress_type=zipfile.ZIP_DEFLATED)
+            method = zipfile.ZIP_STORED if low.endswith(STORED_EXT) else zipfile.ZIP_DEFLATED
+            zdst.writestr(info.filename, body, compress_type=method)
+            del body
+    return totals
+
+
+def clean_epub(data: bytes) -> tuple[bytes, dict]:
+    out = io.BytesIO()
+    totals = clean_epub_file(io.BytesIO(data), out)
     return out.getvalue(), totals

@@ -211,3 +211,80 @@ def test_download_serves_raw_export_if_cleanup_fails(env):
     key = env.pair()
     r = env.client.get("/api/files/doc1/download", headers=auth(key))
     assert r.status_code == 200 and r.content == b"not a zip"
+
+
+def test_download_large_doc_falls_back_to_export_link(env):
+    """files.export says exportSizeLimitExceeded -> the EPUB export link serves it, cleaned and chunked."""
+    key = env.pair()
+    env.fake.export_too_large = True
+    env.fake.add_export_link()
+    r = env.client.get("/api/files/doc1/download", headers=auth(key))
+    assert r.status_code == 200 and r.headers["content-type"] == "application/epub+zip"
+    assert "content-length" not in r.headers  # streamed: no 32 MiB Cloud Run cap
+    assert b"injected by gdrive-epub" in zipfile.ZipFile(io.BytesIO(r.content)).read("OEBPS/doc.xhtml")
+    assert env.fake.hits("www.googleapis.com", "/export") == 1 and env.fake.hits("docs.google.com") == 1
+    assert env.fake.link_auth_seen == [None]  # the bearer token never reaches the signed host
+
+
+def test_download_doc_over_limit_skips_files_export(env):
+    key = env.pair()
+    env.fake.add_export_link(size=27_000_000)
+    r = env.client.get("/api/files/doc1/download", headers=auth(key))
+    assert r.status_code == 200
+    assert env.fake.hits("www.googleapis.com", "/export") == 0 and env.fake.hits("docs.google.com") == 1
+
+
+def test_download_small_doc_uses_files_export(env):
+    key = env.pair()
+    env.fake.add_export_link(size=1000)
+    assert env.client.get("/api/files/doc1/download", headers=auth(key)).status_code == 200
+    assert env.fake.hits("www.googleapis.com", "/export") == 1 and env.fake.hits("docs.google.com") == 0
+
+
+@pytest.mark.parametrize("status,code", [(500, "google_error"), (404, "not_found")])
+def test_download_export_link_failure(env, status, code):
+    key = env.pair()
+    env.fake.add_export_link(size=27_000_000)
+    env.fake.export_link_status = status
+    r = env.client.get("/api/files/doc1/download", headers=auth(key))
+    assert r.json()["error"] == code
+
+
+def test_download_export_link_must_be_google(env):
+    key = env.pair()
+    env.fake.files["doc1"]["exportLinks"] = {"application/epub+zip": "https://evil.example/x"}
+    env.fake.files["doc1"]["size"] = "27000000"
+    r = env.client.get("/api/files/doc1/download", headers=auth(key))
+    assert r.status_code == 502 and not any(q.url.host == "evil.example" for q in env.fake.requests)
+
+
+def test_download_temp_files_removed(env, tmp_path, monkeypatch):
+    import tempfile
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    key = env.pair()
+    env.fake.add_export_link(size=27_000_000)
+    assert env.client.get("/api/files/doc1/download", headers=auth(key)).status_code == 200
+    env.fake.export_link_status = 500
+    assert env.client.get("/api/files/doc1/download", headers=auth(key)).status_code == 502
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_download_large_epub_streams_in_chunks(env):
+    """A big Drive EPUB/PDF passes through chunked with no Content-Length."""
+    key = env.pair()
+    big = b"%PDF-" + b"x" * (3 * 1024 * 1024)
+    env.fake.media = big
+    r = env.client.get("/api/files/pdf1/download", headers=auth(key))
+    assert r.status_code == 200 and r.content == big and "content-length" not in r.headers
+
+
+def test_cleanup_file_api_keeps_images_stored(epub_bytes, tmp_path):
+    from gdriveepub.epubclean import clean_epub_file
+    src = tmp_path / "in.epub"
+    src.write_bytes(epub_bytes)
+    stats = clean_epub_file(str(src), str(tmp_path / "out.epub"))
+    z = zipfile.ZipFile(tmp_path / "out.epub")
+    assert z.infolist()[0].filename == "mimetype" and z.infolist()[0].compress_type == zipfile.ZIP_STORED
+    imgs = [i for i in z.infolist() if i.filename.lower().endswith((".png", ".jpg", ".jpeg"))]
+    assert imgs and all(i.compress_type == zipfile.ZIP_STORED for i in imgs)
+    assert z.testzip() is None and stats["documents"] >= 1

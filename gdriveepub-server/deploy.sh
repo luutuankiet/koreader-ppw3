@@ -40,8 +40,8 @@ if [ "${1:-}" != "--no-setup" ]; then
 fi
 
 g run deploy "$SERVICE" --source . --region="$REGION" --service-account="$SA" \
-  --allow-unauthenticated --min-instances=0 --max-instances=2 --cpu=1 --memory=512Mi \
-  --concurrency=20 --timeout=300 \
+  --allow-unauthenticated --min-instances=0 --max-instances=2 --cpu=1 --memory=1Gi \
+  --concurrency=20 --timeout=1800 \
   --set-env-vars="^|^BASE_URL=$BASE_URL|OWNER_EMAIL_SHA256=$OWNER_EMAIL_SHA256|GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID|STATE_BUCKET=$STATE_BUCKET" \
   --set-secrets="GOOGLE_CLIENT_SECRET=$CLIENT_SECRET_SECRET:$CLIENT_SECRET_VERSION"
 
