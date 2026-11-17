@@ -22,6 +22,7 @@ local logger = require("logger")
 local _ = require("gettext")
 
 local Api = require("gdriveepub_api")
+local Files = require("gdriveepub_files")
 local Format = require("gdriveepub_format")
 local Http = require("gdriveepub_http")
 local ListWidget = require("gdriveepub_listwidget")
@@ -59,6 +60,7 @@ function GDrive:addToMainMenu(menu_items)
         sorting_hint = "tools",
         sub_item_table = {
             { text = _("Open"), callback = function() self:open() end },
+            { text = _("Downloaded files"), callback = function() self:showDownloaded() end },
             {
                 text_func = function()
                     local u = self:baseUrl()
@@ -409,6 +411,171 @@ function GDrive:download(f, open_after)
             ok_callback = doOpen,
         })
     end)
+end
+
+-- Downloaded files ------------------------------------------------------
+
+local function realpath(p)
+    local ok, ffiutil = pcall(require, "ffi/util")
+    if ok and ffiutil.realpath then return ffiutil.realpath(p) end
+    return lfs.attributes(p, "mode") and p or nil
+end
+
+function GDrive:readDownloaded()
+    local dir = self:downloadDir()
+    local entries = {}
+    if lfs.attributes(dir, "mode") == "directory" then
+        for name in lfs.dir(dir) do
+            local attr = lfs.attributes(Format.joinPath(dir, name))
+            if attr then
+                table.insert(entries, { name = name, mode = attr.mode, size = attr.size, modification = attr.modification })
+            end
+        end
+    end
+    return Files.build(entries)
+end
+
+--- Path of the book open in the reader, or nil in the file browser.
+function GDrive:openDocumentPath()
+    local doc = self.ui and self.ui.document
+    return doc and doc.file or nil
+end
+
+function GDrive:showDownloaded()
+    local offset = Format.localOffset()
+    self.dl_sel = Files.newSelection()
+    self.dl_files = self:readDownloaded()
+    self.dl_list = ListWidget:new{
+        title = _("Downloaded files"),
+        subtitle = Files.subtitle(self.dl_files, self.dl_sel),
+        files = self.dl_files, more = false,
+        empty_text = _("No downloaded files in GDrive."),
+        toolbar = {
+            { text = _("Select all"), action = "all" },
+            { text = _("Select none"), action = "none" },
+            { text = _("Delete"), action = "delete" },
+        },
+        row_title = function(f) return Files.label(f, Files.isSelected(self.dl_sel, f.name)) end,
+        meta = function(f) return Files.meta(f, offset) end,
+        on_tap = function(f)
+            Files.toggle(self.dl_sel, f.name)
+            self.dl_list:redraw(Files.subtitle(self.dl_files, self.dl_sel))
+        end,
+        on_hold = function(f) self:showDownloadedFile(f) end,
+        on_action = function(name) self:onDownloadedAction(name) end,
+    }
+    UIManager:show(self.dl_list)
+end
+
+function GDrive:reloadDownloaded()
+    if not self.dl_list then return end
+    self.dl_files = self:readDownloaded()
+    Files.prune(self.dl_sel, self.dl_files)
+    self.dl_list:setFiles(self.dl_files, false, Files.subtitle(self.dl_files, self.dl_sel), true)
+end
+
+function GDrive:onDownloadedAction(name)
+    if name == "close" then
+        UIManager:close(self.dl_list)
+        self.dl_list = nil
+    elseif name == "all" then
+        Files.selectAll(self.dl_sel, self.dl_files)
+        self.dl_list:redraw(Files.subtitle(self.dl_files, self.dl_sel))
+    elseif name == "none" then
+        Files.clear(self.dl_sel)
+        self.dl_list:redraw(Files.subtitle(self.dl_files, self.dl_sel))
+    elseif name == "delete" then
+        self:confirmDeleteDownloaded()
+    end
+end
+
+function GDrive:showDownloadedFile(f)
+    local dialog
+    dialog = ButtonDialog:new{
+        title = f.name .. "\n" .. Files.meta(f, Format.localOffset()),
+        title_align = "left",
+        buttons = {
+            { { text = _("Open"), callback = function()
+                UIManager:close(dialog)
+                if self.dl_list then UIManager:close(self.dl_list) self.dl_list = nil end
+                openBook(self.ui, Format.joinPath(self:downloadDir(), f.name))
+            end },
+              { text = _("Close"), callback = function() UIManager:close(dialog) end } },
+        },
+    }
+    UIManager:show(dialog)
+end
+
+function GDrive:confirmDeleteDownloaded()
+    local names = Files.selectedNames(self.dl_sel, self.dl_files)
+    if #names == 0 then return self:info(_("Tap files to select them first."), 2) end
+    local text = #names == 1 and _("Delete 1 file and its reading data?")
+        or string.format(_("Delete %d files and their reading data?"), #names)
+    UIManager:show(ConfirmBox:new{
+        text = text,
+        ok_text = _("Delete"), cancel_text = _("Cancel"),
+        ok_callback = function() self:deleteDownloaded(names) end,
+    })
+end
+
+--- Delete one book the way KOReader's file browser does: the file, its
+--- sidecar (metadata) in whichever location the settings use, its entry
+--- in reading history and collections. Then the `.sdr` folder beside it if
+--- it still exists and holds no other book's metadata (Book.epub and
+--- Book.pdf share Book.sdr).
+local function deleteBook(path)
+    local ok, err = os.remove(path)
+    if not ok then return false, err end
+    local okb, BookList = pcall(require, "ui/widget/booklist")
+    if okb and BookList.resetBookInfoCache then pcall(BookList.resetBookInfoCache, path) end
+    local okd, DocSettings = pcall(require, "docsettings")
+    if okd and DocSettings.updateLocation then
+        local s, e = pcall(DocSettings.updateLocation, path)
+        if not s then logger.warn("gdriveepub: sidecar cleanup failed", path, e) end
+    end
+    local sdr = Files.sidecarDir(path)
+    if lfs.attributes(sdr, "mode") == "directory" then
+        local left = {}
+        for n in lfs.dir(sdr) do
+            if n ~= "." and n ~= ".." then table.insert(left, n) end
+        end
+        local oku, ffiutil = pcall(require, "ffi/util")
+        if Files.canPurgeSidecar(left) and oku and ffiutil.purgeDir then ffiutil.purgeDir(sdr) end
+    end
+    local okh, ReadHistory = pcall(require, "readhistory")
+    if okh and ReadHistory.fileDeleted then pcall(ReadHistory.fileDeleted, ReadHistory, path) end
+    local okc, ReadCollection = pcall(require, "readcollection")
+    if okc and ReadCollection.removeItem then pcall(ReadCollection.removeItem, ReadCollection, path) end
+    return true
+end
+
+local REASON = {
+    open = "open in the reader",
+    outside = "not inside the GDrive folder",
+    bad_name = "unsafe file name",
+    missing = "already gone",
+    no_dir = "GDrive folder missing",
+}
+
+function GDrive:deleteDownloaded(names)
+    local plan = Files.planDelete(self:downloadDir(), names, self:openDocumentPath(), realpath)
+    local deleted, failed = 0, {}
+    for i, path in ipairs(plan.paths) do
+        local ok, err = deleteBook(path)
+        if ok then deleted = deleted + 1 else table.insert(failed, plan.names[i] .. ": " .. tostring(err)) end
+    end
+    for _i, s in ipairs(plan.skipped) do
+        table.insert(failed, s.name .. ": " .. _(REASON[s.reason] or s.reason))
+    end
+    logger.info("gdriveepub: deleted", deleted, "skipped", #failed)
+    self:reloadDownloaded()
+    local okf, FileManager = pcall(require, "apps/filemanager/filemanager")
+    if okf and FileManager.instance and FileManager.instance.onRefresh then
+        pcall(FileManager.instance.onRefresh, FileManager.instance)
+    end
+    local text = deleted == 1 and _("Deleted 1 file.") or string.format(_("Deleted %d files."), deleted)
+    if #failed > 0 then text = text .. "\n\n" .. _("Not deleted:") .. "\n" .. table.concat(failed, "\n") end
+    self:info(text, #failed > 0 and nil or 2)
 end
 
 return GDrive

@@ -14,6 +14,11 @@ here is a 2-line wrapped title plus a smaller line with the dates and kind.
     }
     UIManager:show(w)
     w:setFiles(files, more, subtitle)  -- after a reload; keeps the page when appending
+
+Optional: `title` (default "Google Drive"), `toolbar` (a row of
+`{ text =, action = }` buttons replacing Recent/Search/Filter/Sort, each
+calling `on_action(action)`), and `row_title(file)` for the row text
+(default `file.name`). `redraw()` repaints the current page in place.
 ]]
 
 local Blitbuffer = require("ffi/blitbuffer")
@@ -43,7 +48,7 @@ local META_FONT = Font:getFace("cfont", 15)
 
 --- One tappable row.
 local Row = InputContainer:extend{
-    file = nil, width = nil, height = nil, meta_text = "",
+    file = nil, width = nil, height = nil, meta_text = "", title_text = nil,
     on_tap = nil, on_hold = nil,
 }
 
@@ -52,7 +57,7 @@ function Row:init()
     local pad = Size.padding.large
     local inner_w = self.width - 2 * pad
     local title = TextBoxWidget:new{
-        text = self.file.name,
+        text = self.title_text or self.file.name,
         face = TITLE_FONT,
         width = inner_w,
         height = self.title_height,
@@ -85,6 +90,14 @@ function Row:onHold() if self.on_hold then self.on_hold(self.file) end return tr
 local ListWidget = InputContainer:extend{
     subtitle = "", files = nil, more = false, page = 1, empty_text = "No files.",
     on_tap = nil, on_hold = nil, on_action = nil, meta = nil,
+    title = "Google Drive", toolbar = nil, row_title = nil,
+}
+
+local DEFAULT_TOOLBAR = {
+    { text = "Recent", action = "recent" },
+    { text = "Search", action = "search" },
+    { text = "Filter", action = "filter" },
+    { text = "Sort", action = "sort" },
 }
 
 function ListWidget:init()
@@ -113,18 +126,13 @@ end
 function ListWidget:build()
     local w = self.width
     self.title_bar = TitleBar:new{
-        width = w, title = "Google Drive", subtitle = self.subtitle,
+        width = w, title = self.title, subtitle = self.subtitle,
         subtitle_truncate_left = false, with_bottom_line = true,
         close_callback = function() self:action("close") end,
     }
     local toolbar = ButtonTable:new{
         width = w - 2 * Size.padding.default,
-        buttons = { {
-            { text = "Recent", callback = function() self:action("recent") end },
-            { text = "Search", callback = function() self:action("search") end },
-            { text = "Filter", callback = function() self:action("filter") end },
-            { text = "Sort", callback = function() self:action("sort") end },
-        } },
+        buttons = { self:toolbarButtons() },
         zero_sep = true, show_parent = self,
     }
     -- Footer first, so the rows know how much room is left.
@@ -160,6 +168,15 @@ function ListWidget:build()
     self:fillRows()
 end
 
+function ListWidget:toolbarButtons()
+    local row = {}
+    for _i, b in ipairs(self.toolbar or DEFAULT_TOOLBAR) do
+        local name = b.action
+        table.insert(row, { text = b.text, callback = function() self:action(name) end })
+    end
+    return row
+end
+
 function ListWidget:pages()
     return State.pageCount(#self.files, self.per_page)
 end
@@ -180,6 +197,7 @@ function ListWidget:fillRows()
         table.insert(self.rows_group, Row:new{
             file = f, width = self.width, height = self.row_height, title_height = self.title_height,
             meta_text = self.meta and self.meta(f) or "",
+            title_text = self.row_title and self.row_title(f) or nil,
             on_tap = self.on_tap, on_hold = self.on_hold,
         })
         table.insert(self.rows_group, LineWidget:new{
@@ -205,6 +223,16 @@ function ListWidget:setFiles(files, more, subtitle, keep_page)
         self.title_bar:setSubTitle(subtitle)
     end
     if not keep_page then self.page = 1 end
+    self:fillRows()
+    self:refresh()
+end
+
+--- Repaint the current page, e.g. after a selection mark changed.
+function ListWidget:redraw(subtitle)
+    if subtitle then
+        self.subtitle = subtitle
+        self.title_bar:setSubTitle(subtitle)
+    end
     self:fillRows()
     self:refresh()
 end
