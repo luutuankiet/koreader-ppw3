@@ -25,7 +25,8 @@ def test_zip_layout_kept(epub_bytes):
 
 def test_stats(epub_bytes):
     _, _, stats = cleaned_doc(epub_bytes)
-    assert stats == {"empty_paragraphs_removed": 2, "code_lines": 3, "images": 1, "documents": 1}
+    assert stats == {"empty_paragraphs_removed": 2, "code_lines": 3, "images": 1, "documents": 1, "links_unwrapped": 0,
+                     "images_processed": 0, "image_bytes_before": 68, "image_bytes_after": 68}
 
 
 def test_empty_paragraphs_dropped_and_text_kept(epub_bytes):

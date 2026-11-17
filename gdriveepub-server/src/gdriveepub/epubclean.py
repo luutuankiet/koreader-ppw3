@@ -10,15 +10,25 @@ Google numbers lists with CSS counters (`li:before { content: counter(...) ". " 
 engine does not evaluate counter(), so it showed only the ". ". The markers are computed here and
 written into each list item as text, and the li:before rules are removed. A horizontal rule is
 exported as an empty paragraph with a bottom border; it becomes an <hr> instead of being dropped.
+
+A Kindle cannot follow a web link, and a tap on one only gets in the way of turning the page, so
+every external link (http, https, mailto, Google's google.com/url redirects, any other scheme)
+becomes an underlined <span class="gde-link">; links inside the book (#anchors, other EPUB files:
+the table of contents, heading links, footnotes) stay. Images are re-encoded for e-ink by einkimg;
+a photo becomes a .jpg, so the manifest and every <img src> are renamed to match.
 """
 
 from __future__ import annotations
 
 import io
+import posixpath
 import re
 import zipfile
+from urllib.parse import unquote
 
 from lxml import etree
+
+from .einkimg import RASTER_EXT, process_image
 
 XHTML = "http://www.w3.org/1999/xhtml"
 NS = {"x": XHTML}
@@ -52,6 +62,7 @@ table { border-collapse: collapse; margin: 0.3em 0 0.6em 0; width: 100%; }
 td, th { padding: 0.15em 0.3em; vertical-align: top; overflow-wrap: anywhere; word-wrap: break-word; }
 td p, th p { margin: 0; }
 img { max-width: 100%; height: auto; }
+.gde-link { text-decoration: underline; }
 """
 
 
@@ -186,13 +197,58 @@ def _is_rule_paragraph(p) -> bool:
                and st.get(f"border-{side}-width", "1pt") not in ("0", "0pt", "0px") for side in ("bottom", "top"))
 
 
-def clean_xhtml(data: bytes) -> tuple[bytes, dict]:
+SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
+
+
+def _is_external(href: str) -> bool:
+    href = href.strip()
+    return bool(SCHEME.match(href)) or href.startswith("//")
+
+
+def _unwrap_links(body) -> int:
+    n = 0
+    for a in list(body.iter(f"{{{XHTML}}}a")):
+        href = a.get("href")
+        if href is None or not _is_external(href):
+            continue
+        span = etree.Element(f"{{{XHTML}}}span")
+        span.set("class", "gde-link")
+        if a.get("id"):
+            span.set("id", a.get("id"))
+        span.text, span.tail = a.text, a.tail
+        for child in a:
+            span.append(child)
+        a.getparent().replace(a, span)
+        n += 1
+    return n
+
+
+def _renamed(href: str, base_dir: str, renames: dict) -> str | None:
+    """New href if `href` (relative to `base_dir` in the zip) points at a renamed file."""
+    if not href or _is_external(href) or href.startswith("#"):
+        return None
+    path, frag = (href.split("#", 1) + [""])[:2]
+    target = posixpath.normpath(posixpath.join(base_dir, unquote(path)))
+    new = renames.get(target)
+    if new is None:
+        return None
+    old_ext, new_ext = posixpath.splitext(target)[1], posixpath.splitext(new)[1]
+    return path[: len(path) - len(old_ext)] + new_ext + (("#" + frag) if frag else "")
+
+
+def clean_xhtml(data: bytes, renames: dict | None = None, base_dir: str = "") -> tuple[bytes, dict]:
     parser = etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=True)
     root = etree.fromstring(data, parser)
-    stats = {"empty_paragraphs_removed": 0, "code_lines": 0, "images": 0}
+    stats = {"empty_paragraphs_removed": 0, "code_lines": 0, "images": 0, "links_unwrapped": 0}
     body = root.find("x:body", NS)
     if body is None:
         return data, stats
+    stats["links_unwrapped"] = _unwrap_links(body)
+    if renames:
+        for img in body.iter(f"{{{XHTML}}}img"):
+            new = _renamed(img.get("src", ""), base_dir, renames)
+            if new:
+                img.set("src", new)
 
     head = root.find("x:head", NS)
     google_css = "".join(st.text or "" for st in head.findall("x:style", NS)) if head is not None else ""
@@ -269,31 +325,78 @@ def clean_xhtml(data: bytes) -> tuple[bytes, dict]:
 
 # Already compressed; deflating them again costs seconds on a big doc and saves almost nothing.
 STORED_EXT = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+OPF = "http://www.idpf.org/2007/opf"
+
+
+def _rewrite_opf(data: bytes, base_dir: str, renames: dict) -> bytes:
+    root = etree.fromstring(data, etree.XMLParser(resolve_entities=False, no_network=True))
+    for item in root.iter(f"{{{OPF}}}item"):
+        new = _renamed(item.get("href", ""), base_dir, renames)
+        if new:
+            item.set("href", new)
+            item.set("media-type", "image/jpeg")
+    return etree.tostring(root, xml_declaration=True, encoding="UTF-8")
+
+
+def _images(zsrc, zdst, names: list[str], totals: dict) -> dict:
+    """Re-encode every raster image, one at a time, writing it to `zdst`. Returns {old: new} renames."""
+    renames, taken = {}, set(names)
+    for name in names:
+        if not name.lower().endswith(RASTER_EXT):
+            continue
+        data = zsrc.read(name)
+        totals["image_bytes_before"] += len(data)
+        res = process_image(data)
+        new = name
+        if res is not None:
+            data, kind = res
+            totals["images_processed"] += 1
+            if kind == "jpeg" and not name.lower().endswith((".jpg", ".jpeg")):
+                stem, i = posixpath.splitext(name)[0], 0
+                new = stem + ".jpg"
+                while new in taken:
+                    i += 1
+                    new = f"{stem}-{i}.jpg"
+                taken.add(new)
+                renames[name] = new
+        totals["image_bytes_after"] += len(data)
+        zdst.writestr(new, data, compress_type=zipfile.ZIP_STORED)
+        del data
+    return renames
 
 
 def clean_epub_file(src, dst) -> dict:
     """Clean the EPUB at `src` (path or seekable binary file) into `dst` (path or binary file).
 
-    Entries are read and written one at a time, so only one entry is in memory at once.
+    Entries are read and written one at a time, so only one entry is in memory at once. Images go
+    first, so the pages and the manifest can be rewritten for any image whose extension changed.
     """
-    totals = {"empty_paragraphs_removed": 0, "code_lines": 0, "images": 0, "documents": 0}
+    totals = {"empty_paragraphs_removed": 0, "code_lines": 0, "images": 0, "links_unwrapped": 0, "documents": 0,
+              "images_processed": 0, "image_bytes_before": 0, "image_bytes_after": 0}
     with zipfile.ZipFile(src) as zsrc, zipfile.ZipFile(dst, "w") as zdst:
         names = zsrc.namelist()
         if "mimetype" in names:  # must be first and stored uncompressed
             zdst.writestr(zipfile.ZipInfo("mimetype"), zsrc.read("mimetype"), compress_type=zipfile.ZIP_STORED)
+        renames = _images(zsrc, zdst, names, totals)
         for info in zsrc.infolist():
-            if info.filename == "mimetype":
+            low = info.filename.lower()
+            if info.filename == "mimetype" or low.endswith(RASTER_EXT):
                 continue
             body = zsrc.read(info.filename)
-            low = info.filename.lower()
+            base_dir = posixpath.dirname(info.filename)
             if low.endswith((".xhtml", ".html", ".htm")) and not low.endswith("nav.xhtml"):
                 try:
-                    body, stats = clean_xhtml(body)
+                    body, stats = clean_xhtml(body, renames, base_dir)
                     totals["documents"] += 1
                     for k, v in stats.items():
                         totals[k] += v
                 except etree.XMLSyntaxError:
                     pass  # leave a page we cannot parse exactly as Google wrote it
+            elif low.endswith(".opf") and renames:
+                try:
+                    body = _rewrite_opf(body, base_dir, renames)
+                except etree.XMLSyntaxError:
+                    pass
             method = zipfile.ZIP_STORED if low.endswith(STORED_EXT) else zipfile.ZIP_DEFLATED
             zdst.writestr(info.filename, body, compress_type=method)
             del body

@@ -27,7 +27,8 @@ flowchart LR
 | `src/gdriveepub/google.py` | OAuth code exchange and token refresh (`invalid_grant` becomes re-auth), Drive list, metadata, export (10 MB cap), the EPUB `exportLinks` URL for larger Docs, and media |
 | `src/gdriveepub/driveq.py` | `/api/files` query parameters to a Drive `q` and `orderBy` |
 | `src/gdriveepub/names.py` | file names: sanitised title, `Content-Disposition`, percent-encoded `X-File-Name` |
-| `src/gdriveepub/epubclean.py` | the EPUB cleanup |
+| `src/gdriveepub/epubclean.py` | the EPUB cleanup, including external links unwrapped to underlined text (internal links kept) and image renames in the manifest |
+| `src/gdriveepub/einkimg.py` | images for 16-level e-ink: flattened on white, grayscale, autocontrast, fitted to 1072x1448, 4-bit PNG for flat images or grayscale JPEG for photos; SVG and undecodable images kept |
 | `deploy.sh` | idempotent setup (service account, bucket, roles) and `gcloud run deploy --source .`, from a gitignored `.env` |
 
 ## HTTP contract
