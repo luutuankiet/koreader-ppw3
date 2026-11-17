@@ -14,6 +14,12 @@ TOKEN_URL = "https://oauth2.googleapis.com/token"
 DRIVE = "https://www.googleapis.com/drive/v3"
 SCOPES = "openid email https://www.googleapis.com/auth/drive.readonly"
 EXPORT_LIMIT = 10 * 1024 * 1024
+EPUB = "application/epub+zip"
+# The export link (what Drive's "Download as" uses) has no 10 MB cap, but Google can take
+# 30 s or more to build a big EPUB before the first byte, so its read timeout is long.
+LINK_TIMEOUT = httpx.Timeout(600, connect=10)
+LINK_HOSTS = {"docs.google.com", "www.googleapis.com"}
+CHUNK = 1024 * 1024
 
 
 class ReauthNeeded(Exception):
@@ -96,7 +102,7 @@ class Google:
 
     async def get_meta(self, token: str, file_id: str) -> dict:
         r = await self.http.get(f"{DRIVE}/files/{file_id}", headers=self._headers(token),
-                                params={"fields": "id,name,mimeType,modifiedTime,size,trashed",
+                                params={"fields": "id,name,mimeType,modifiedTime,size,trashed,exportLinks",
                                         "supportsAllDrives": "true"})
         if r.status_code == 401:
             raise ReauthNeeded()
@@ -105,8 +111,9 @@ class Google:
         return r.json()
 
     async def export_epub(self, token: str, file_id: str) -> bytes:
+        """`files.export` as EPUB. Raises TooLarge past Google's 10 MB export cap."""
         r = await self.http.get(f"{DRIVE}/files/{file_id}/export", headers=self._headers(token),
-                                params={"mimeType": "application/epub+zip"})
+                                params={"mimeType": EPUB})
         if r.status_code == 401:
             raise ReauthNeeded()
         if r.status_code == 403 and "exportSizeLimitExceeded" in r.text:
@@ -116,6 +123,31 @@ class Google:
         if len(r.content) > EXPORT_LIMIT:
             raise TooLarge()
         return r.content
+
+    async def download_export_link(self, token: str, url: str, fh) -> int:
+        """Stream an `exportLinks` URL into the open binary file `fh`; returns the byte count.
+
+        Google answers with a redirect to a signed download host; httpx drops the
+        Authorization header when a redirect leaves the origin, which that host does not need.
+        """
+        host = httpx.URL(url).host
+        if httpx.URL(url).scheme != "https" or host not in LINK_HOSTS:
+            raise GoogleError(502, f"unexpected export link host {host}")
+        req = self.http.build_request("GET", url, headers=self._headers(token), timeout=LINK_TIMEOUT)
+        r = await self.http.send(req, stream=True, follow_redirects=True)
+        try:
+            if r.status_code != 200:
+                body = (await r.aread()).decode(errors="replace")
+                if r.status_code == 401:
+                    raise ReauthNeeded()
+                raise GoogleError(r.status_code, body)
+            n = 0
+            async for chunk in r.aiter_bytes(CHUNK):
+                fh.write(chunk)
+                n += len(chunk)
+            return n
+        finally:
+            await r.aclose()
 
     async def open_media(self, token: str, file_id: str) -> httpx.Response:
         req = self.http.build_request("GET", f"{DRIVE}/files/{file_id}", headers=self._headers(token),

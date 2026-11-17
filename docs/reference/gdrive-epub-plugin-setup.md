@@ -43,7 +43,8 @@ to Google directly.
   3 months); **Sort** orders by opened, updated, created or name.
 - Tap a file to download it to `GDrive/` in your home folder, then choose
   **Open** to read it now. Long-press a file for its details.
-- Google refuses to export documents larger than 10 MB; the plugin says so.
+- Large Google Docs (over 10 MB) download too, but Google can take 30 s or
+  more before the first byte; the plugin waits up to 2 minutes for it.
 
 ## 5. Clean up downloaded files
 
@@ -76,7 +77,7 @@ an app in testing mode). When that happens any list or download shows
 **Sign in again on your phone** with a QR code. Scan it, sign in, then tap
 **Done, retry**. The device does not need to pair again.
 
-## Known issues (0.1.1)
+## Known issues (0.1.2)
 
 - Images in converted Google Docs are followed by a stray visible link.
 - Numbered lists lose their numbers in converted Google Docs.
