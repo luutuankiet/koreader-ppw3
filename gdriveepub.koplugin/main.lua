@@ -320,10 +320,10 @@ local function mark(label, on) return on and ("\226\156\147 " .. label) or label
 function GDrive:showFilter()
     local dialog
     local buttons = {}
-    for _, which in ipairs({ "modified_within", "created_within" }) do
+    for _i, which in ipairs({ "modified_within", "created_within" }) do
         table.insert(buttons, { { text = which == "modified_within" and _("Updated within") or _("Created within"), enabled = false, callback = function() end } })
         local row = {}
-        for _, v in ipairs(State.WITHIN) do
+        for _j, v in ipairs(State.WITHIN) do
             local label = v == "" and _("Any") or v
             table.insert(row, { text = mark(label, self.state[which] == v), callback = function()
                 UIManager:close(dialog)
@@ -343,7 +343,7 @@ end
 function GDrive:showSort()
     local dialog
     local buttons = {}
-    for _, sort in ipairs(State.SORTS) do
+    for _i, sort in ipairs(State.SORTS) do
         table.insert(buttons, { { text = mark(State.SORT_LABEL[sort], self.state.sort == sort), callback = function()
             UIManager:close(dialog) State.setSort(self.state, sort) self:load(false)
         end } })
