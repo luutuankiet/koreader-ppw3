@@ -3,10 +3,10 @@
   "plugins": [
     {
       "name": "gdriveepub",
-      "version": "0.1.1",
-      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/gdriveepub-v0.1.1/gdriveepub-0.1.1.tar.gz",
-      "size": 19105,
-      "sha256": "f2db3fc8f1efe45bcee9b905bfcb2ae4ce02b81952288c0461172f6766e40485",
+      "version": "0.1.2",
+      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/gdriveepub-v0.1.2/gdriveepub-0.1.2.tar.gz",
+      "size": 19174,
+      "sha256": "a6ca2f0900d3504c2a403e5b0650ae11243fac281eb45e39fe3e3b1e13e1dd0a",
       "description": "Browse, search and download Google Docs (as EPUB), PDFs and EPUBs from your Google Drive through your own gdrive-epub server. Pair once by QR code.",
       "fullname": "Google Drive"
     },
