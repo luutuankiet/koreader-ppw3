@@ -15,6 +15,7 @@ Workspace for developing KOReader plugins for Kindle Paperwhite 3 devices, plus 
 - `koreader_mcp.koplugin/` - agent bridge inside KOReader, dialling out to the gateway during a live session (`handlers.lua` tools, `live.lua` session and connection, `main.lua` entry and menu, `server.lua` JSON codec, `ui_agent.lua` widget snapshot and actions, `sleephold.lua` Kindle screensaver hold and sleep release, tests with `luajit test_ui_agent.lua`, `luajit test_live.lua` and `luajit test_sleephold.lua`)
 - `kindle-gateway/` - Node/TypeScript MCP relay, now the LAN fallback on the home server (`src/gateway-server.ts` tools, `src/device-link.ts` device connections, `src/device-registry.ts` in-memory registry of connected devices, `src/ui-snapshot.ts` snapshot formatting and stale references)
 - `kindle-gateway-worker/` - the gateway on Cloudflare: a Worker in front of one Durable Object (`src/hub.ts`) that holds every device's WebSocket and serves stateless MCP on `/mcp` behind `AGENT_KEY` (`src/mcp.ts` tool groups, `src/tools/` tools, `src/screenshot.ts` photon JPEG encode, `src/inbox.ts` diagnostics upload to R2 on `PUT /inbox/<device>/<file>` behind `DEVICE_KEY`, `src/diagnostics-tools.ts` list and read diagnostics); `npm test` (vitest in workerd), `npx tsc --noEmit`, `scripts/fake-device.mjs` plus `scripts/mcp-client.mjs` against `npx wrangler dev`
+- `gdriveepub-server/` - Python Cloud Run server that lists the owner's Google Drive and serves Google Docs as cleaned EPUBs to a paired Kindle (map: `docs/architecture/gdrive-epub-server.md`; `deploy.sh` reads `.env`, copy `.env.example`, gitignored)
 - `rssreader.koplugin/` - FreshRSS reader plugin (separate repo)
 - `syncedhistory.koplugin/` - synced reading list plugin (map: `docs/architecture/synced-reading-list.md`; each module has a `test_*.lua`, run with `luajit test_<name>.lua`, or `--koreader` from a KOReader install folder for the real md5 and lfs)
 - `pluginpackages.koplugin/` - on-device plugin installer with rollback and self-update (map: `docs/architecture/plugin-installer.md`; `pluginpackages_core.lua` does the disk work, tests with `luajit test_core.lua`)
@@ -33,6 +34,7 @@ Workspace for developing KOReader plugins for Kindle Paperwhite 3 devices, plus 
 - `cd kindle-gateway-worker && npx vitest run` - vitest suite inside workerd (hub, MCP tools, inbox)
 - `cd kindle-gateway-worker && npx wrangler dev` - local Worker on `http://127.0.0.1:8787`; keys from `.dev.vars` (copy `.dev.vars.example`, gitignored); drive it with `scripts/fake-device.mjs` and `scripts/mcp-client.mjs`
 - `cd kindle-gateway-worker && npx wrangler deploy` - deploy to `https://kindle.kenluu.org`, with `CLOUDFLARE_API_TOKEN` (the `cf` CLI's OAuth token works) and `CLOUDFLARE_ACCOUNT_ID` in the environment, never in a file; keys with `npx wrangler secret put AGENT_KEY` and `DEVICE_KEY`
+- `cd gdriveepub-server && uv run pytest -q` - server tests (HTTP routes against a fake Google, EPUB cleanup)
 
 <!-- Standard block. Everything above belongs to this project; everything below is
      the pointer every repo laid out this way carries. -->

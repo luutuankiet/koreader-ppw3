@@ -1,0 +1,8 @@
+# What `gcloud run deploy --source .` uploads. Allowlist, so .env and local state never leave.
+/*
+!/Dockerfile
+!/.dockerignore
+!/pyproject.toml
+!/uv.lock
+!/src/
+**/__pycache__

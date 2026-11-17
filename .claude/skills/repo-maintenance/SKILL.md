@@ -63,6 +63,7 @@ it with a new one rather than editing it.
 - [The gateway serves MCP statelessly, with no session IDs](../../../docs/adr/0004-stateless-gateway-mcp-transport.md)
 - [Devices dial out to the gateway, and only during a live session](../../../docs/adr/0005-devices-dial-out-live-mode.md)
 - [The gateway runs on a Cloudflare Worker, devices hold a hibernating WebSocket, and plugins ship from a GitHub registry](../../../docs/adr/0006-cloudflare-worker-hibernating-websocket.md)
+- [Google Drive reaches the Kindle through a small Cloud Run server that holds the refresh token](../../../docs/adr/0007-google-drive-access-through-a-cloud-run-server.md)
 
 <!-- END GENERATED INDEX -->
 

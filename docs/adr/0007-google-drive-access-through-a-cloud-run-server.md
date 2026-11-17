@@ -1,0 +1,15 @@
+# Google Drive reaches the Kindle through a small Cloud Run server that holds the refresh token
+
+The owner wants to open Google Docs, PDFs and EPUBs from a Google Workspace Drive on a Kindle Paperwhite 3, without a computer in between. The Kindle runs KOReader, which can make HTTPS requests but has no browser, no public address and a tiny screen. Google Docs also need converting: Drive's `files.export` returns an EPUB, but one that reads badly on e-ink (every paragraph carries inline padding, fixed heights and point sizes, blank lines become empty paragraphs, code lines are one full-spaced paragraph each).
+
+**Decision.** A Starlette service, `gdriveepub-server/`, runs on Cloud Run with `--allow-unauthenticated` and does its own authentication. It keeps the owner's Google refresh token (scope `drive.readonly` plus `openid email`) in one JSON object in a private GCS bucket, lists files and serves downloads to the KOReader plugin over a small JSON API behind a per-device bearer key, and cleans Google's EPUB export before sending it. A Kindle pairs by showing a QR code: the phone that scans it signs in to Google, the callback accepts only the account in `OWNER_EMAIL`, and the Kindle's poll then receives a device key once (the server stores only its SHA-256).
+
+**Why not let the Kindle talk to Google directly.**
+- Google's OAuth device flow, the one built for screens without a browser, does not allow the Drive read scope: `drive.readonly` is not on its list of allowed scopes, so a device-flow token cannot list or export Drive files.
+- The web flow needs a redirect URI that Google can send the browser to. The Kindle has no public HTTPS address, and a loopback redirect would have to be opened on the Kindle itself, which has no usable browser.
+- A refresh token and a client secret on the device would sit in plain files on a Kindle that is not encrypted; on the server they sit in Secret Manager and a private bucket, and a lost Kindle is cut off by removing its key hash from the state object.
+- Cleaning the EPUB needs an XML library and some CPU and is easier in Python with lxml on the server than in KOReader's Lua.
+
+**Why Cloud Run and GCS.** The owner already runs a Google Docs service on Cloud Run in the same project, with an OAuth Web client and its secret in Secret Manager; this service reuses that client (its own redirect URI is added to it) and the secret by reference. Cloud Run bills only while a request is in flight, and this service is used a few times a day. One JSON object written with a generation-match precondition is enough state for one owner and a few devices; a database would be more to run for no gain.
+
+**Costs accepted.** Google may expire the refresh token (for example after 7 days while the OAuth app is in Testing mode); the API then answers `401 google_reauth` with a sign-in link and the owner signs in again on the phone, without re-pairing. The redirect URI on the OAuth client has to be added once by hand in the Cloud Console, because Google has no CLI or API for Web client redirect URIs.
