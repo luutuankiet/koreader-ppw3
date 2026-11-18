@@ -20,3 +20,6 @@ kosettings_backup/
 # Emulator: test books and persisted KOReader settings stay on the host only.
 emulator/library/
 emulator/state/
+
+
+.claude/worktrees
