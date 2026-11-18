@@ -90,5 +90,30 @@ eq(F.canPurgeSidecar({}), true, "empty sidecar")
 eq(F.canPurgeSidecar({ "metadata.pdf.lua" }), false, "sibling metadata kept")
 eq(F.canPurgeSidecar({ "metadata.pdf.lua.old" }), false, "sibling backup kept")
 
+-- Image scaling seed
+local function fakeSettings(data)
+    local t = { data = data or {} }
+    function t:readSetting(k) return self.data[k] end
+    function t:saveSetting(k, v) self.data[k] = v end
+    return t
+end
+local ds = fakeSettings()
+eq(F.seedSmoothScaling(ds, nil), true, "new book: seeded")
+eq(ds.data.copt_smooth_scaling, 1, "new book: best scaling")
+eq(ds.data[F.SEEDED_KEY], true, "new book: marker")
+eq(F.seedSmoothScaling(ds, nil), false, "second download: no change")
+ds = fakeSettings({ copt_smooth_scaling = 0 })
+eq(F.seedSmoothScaling(ds, nil), true, "book opened before (default 0 stored): seeded once")
+eq(ds.data.copt_smooth_scaling, 1, "book opened before: best scaling")
+ds = fakeSettings({ copt_smooth_scaling = 0, [F.SEEDED_KEY] = true })
+eq(F.seedSmoothScaling(ds, nil), false, "user switched back to fast: kept")
+eq(ds.data.copt_smooth_scaling, 0, "user choice fast stays 0")
+ds = fakeSettings()
+eq(F.seedSmoothScaling(ds, 0), false, "reader-wide default set: not touched")
+eq(ds.data.copt_smooth_scaling, nil, "reader-wide default: no per-book value")
+eq(ds.data[F.SEEDED_KEY], true, "reader-wide default: marker still set")
+ds = fakeSettings({ copt_smooth_scaling = 1 })
+eq(F.seedSmoothScaling(ds, nil), false, "already best: no change")
+
 print(string.format("test_files: %d passed, %d failed", pass, fail))
 os.exit(fail == 0 and 0 or 1)

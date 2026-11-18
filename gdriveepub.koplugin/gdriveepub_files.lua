@@ -161,4 +161,29 @@ function Files.canPurgeSidecar(names)
     return true
 end
 
+-- Image scaling ---------------------------------------------------------
+
+--- Sidecar keys for the per-book "Image Scaling" option. KOReader's default
+--- is `fast` (nearest neighbour), which breaks the thin strokes of text in
+--- diagrams when a picture is shrunk to the text column; `best` smooths it.
+Files.SMOOTH_KEY = "copt_smooth_scaling"
+Files.SEEDED_KEY = "gdriveepub_smooth_scaling_seeded"
+
+--- Turn on `best` image scaling for a downloaded book, once per book.
+--- `ds` is the book's settings object (readSetting/saveSetting), `global`
+--- the reader-wide default for the option (nil when the user never set one).
+--- KOReader saves every option, defaults included, into a book's settings
+--- when it closes the book, so a stored 0 cannot be told apart from a user's
+--- choice. A marker records that this plugin already set the option: after
+--- the first time, whatever the book holds is the user's own choice and is
+--- kept. A reader-wide default chosen by the user wins as well.
+--- Returns true when the option was changed.
+function Files.seedSmoothScaling(ds, global)
+    if ds:readSetting(Files.SEEDED_KEY) then return false end
+    ds:saveSetting(Files.SEEDED_KEY, true)
+    if global ~= nil or ds:readSetting(Files.SMOOTH_KEY) == 1 then return false end
+    ds:saveSetting(Files.SMOOTH_KEY, 1)
+    return true
+end
+
 return Files

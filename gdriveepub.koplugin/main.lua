@@ -9,6 +9,7 @@ scanning a QR code with a phone; the server then keeps the Google sign-in.
 local ButtonDialog = require("ui/widget/buttondialog")
 local ConfirmBox = require("ui/widget/confirmbox")
 local DataStorage = require("datastorage")
+local Event = require("ui/event")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
 local LuaSettings = require("luasettings")
@@ -385,6 +386,30 @@ local function openBook(ui, path)
     end
 end
 
+--- Open a downloaded book with smooth ("best") image scaling, so text inside
+--- diagrams stays readable when KOReader shrinks the picture to the page.
+--- Done once per book; see Files.seedSmoothScaling for why and when the
+--- user's own choice wins. When the book is the one open in the reader, the
+--- reader's live settings are changed instead, because the reader writes
+--- them over the file when it closes the book.
+function GDrive:seedSmoothScaling(path)
+    local global = G_reader_settings:readSetting(Files.SMOOTH_KEY)
+    if self.ui and self.ui.doc_settings and self:openDocumentPath() == path then
+        if Files.seedSmoothScaling(self.ui.doc_settings, global) then
+            self.ui:handleEvent(Event:new("ToggleImageScaling", true))
+        end
+        return
+    end
+    local okd, DocSettings = pcall(require, "docsettings")
+    if not okd then return end
+    local s, e = pcall(function()
+        local ds = DocSettings:open(path)
+        Files.seedSmoothScaling(ds, global)
+        ds:flush()
+    end)
+    if not s then logger.warn("gdriveepub: could not set image scaling", path, e) end
+end
+
 function GDrive:download(f, open_after)
     local dir = self:downloadDir()
     if lfs.attributes(dir, "mode") ~= "directory" then lfs.mkdir(dir) end
@@ -402,6 +427,7 @@ function GDrive:download(f, open_after)
         os.remove(final)
         local ok, err = os.rename(part, final)
         if not ok then return self:info(_("Could not save the file: ") .. tostring(err)) end
+        self:seedSmoothScaling(final)
         local function doOpen()
             if self.list then UIManager:close(self.list) self.list = nil end
             openBook(self.ui, final)
