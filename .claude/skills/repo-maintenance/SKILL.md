@@ -47,6 +47,7 @@ Simply true, and expensive to re-derive.
 | page | summary | verified |
 |---|---|---|
 | [Gateway configuration](../../../docs/reference/configuration.md) | environment variables read by the gateway container and where they are set | 2026-10-31 |
+| [Google Drive to EPUB: research and measured findings](../../../docs/reference/drive-to-epub-findings.md) | why no existing KOReader plugin could read Google Docs, the Google API limits the server is built around, how large exports behaved on Cloud Run (0.3.0 and 0.4.0), and why diagrams were unreadable until server 0.5.0 | 2026-11-18 |
 | [Setting up the Google Drive plugin on a Kindle](../../../docs/reference/gdrive-epub-plugin-setup.md) | install the gdriveepub plugin through Plugin packages, set the server URL, pair by QR code, delete downloaded files from the Kindle, and sign in again when Google asks (about once a week) | 2026-11-17 |
 | [Kindle power daemon (powerd) properties and sleep timers](../../../docs/reference/kindle-powerd.md) | what com.lab126.powerd exposes on a Paperwhite 3 for delaying suspend, and the timers between the power button and sleep | 2026-11-03 |
 | [Kindle SSH access and ports](../../../docs/reference/kindle-ssh-access.md) | the two SSH servers on a jailbroken Paperwhite 3, which survives a KOReader restart, and which ports matter | 2026-10-28 |
