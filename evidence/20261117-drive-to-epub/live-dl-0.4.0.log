@@ -1,0 +1,3 @@
+status=200 bytes=2201195 ttfb=29.984553s total=30.177305s
+content-type: application/epub+zip
+{'zip_ok': True, 'entries': 83, 'by_ext': {'mimetype': 1, 'png': 78, 'xml': 1, 'xhtml': 2, 'opf': 1}, 'uncompressed_bytes_by_ext': {'mimetype': 20, 'png': 2036785, 'xml': 255, 'xhtml': 1021961, 'opf': 6843}, 'spine_itemrefs': 1, 'first_entry': 'mimetype'}
