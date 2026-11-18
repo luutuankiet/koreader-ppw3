@@ -65,6 +65,7 @@ it with a new one rather than editing it.
 - [Devices dial out to the gateway, and only during a live session](../../../docs/adr/0005-devices-dial-out-live-mode.md)
 - [The gateway runs on a Cloudflare Worker, devices hold a hibernating WebSocket, and plugins ship from a GitHub registry](../../../docs/adr/0006-cloudflare-worker-hibernating-websocket.md)
 - [Google Drive reaches the Kindle through a small Cloud Run server that holds the refresh token](../../../docs/adr/0007-google-drive-access-through-a-cloud-run-server.md)
+- [Diagrams in converted Google Docs keep twice the screen resolution](../../../docs/adr/0008-line-art-images-keep-twice-the-screen-resolution.md)
 
 <!-- END GENERATED INDEX -->
 

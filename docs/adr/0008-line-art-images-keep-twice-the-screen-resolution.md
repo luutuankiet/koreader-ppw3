@@ -1,0 +1,9 @@
+# Diagrams in converted Google Docs keep twice the screen resolution
+
+The gdrive-epub server (decision record 0007) re-encodes every image in a converted Google Doc for the Kindle's 16-level gray screen. Until server 0.5.0 it fitted every image within the screen, 1072x1448. That is fine for photos and narrow screenshots, but a wide diagram is fitted by its width: a 2048x190 diagram became 1072x100, its handwriting-style labels about 9 px tall. KOReader can zoom an image (long-press opens the image viewer), but zooming a 100 px tall image only enlarges the same pixels, so the labels stay unreadable.
+
+**Decision.** Flat images (few colours: diagrams, charts, screenshots), which take the 16-gray 4-bit PNG path in `gdriveepub-server/src/gdriveepub/einkimg.py`, are fitted within twice the screen, 2144x2896 (`LINEART_MAX`). Photos keep the grayscale JPEG path at 1x the screen, where extra pixels cost far more bytes and add nothing a reader zooms for. Nothing is upscaled, and the gray rendering is unchanged: same flatten, autocontrast and 16 levels without dithering. Google's export already delivers images at up to 2048 px on the long side, so in practice line art now keeps the export's own resolution.
+
+**Measured.** On a test doc with 27 diagrams: EPUB 838 KB at 1x, 1.57 MB at 2x (the raw Google export is 6.0 MB). The largest image in it went from at most 1072x1448 to 1875x1999, about 3.7 MB once decoded at 8 bits per pixel. KOReader's per-book "Image Scaling" option (`fast` nearest-neighbour vs `best`) made no visible difference on the emulator, so no plugin change ships with this.
+
+**Costs accepted.** EPUBs with many diagrams are about twice as large to download, and each decoded diagram takes up to four times the memory in KOReader's image cache. Both are within a Kindle Paperwhite 3's limits on the test doc; the largest page has not yet been checked on a real PW3.

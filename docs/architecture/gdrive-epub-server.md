@@ -1,7 +1,7 @@
 ---
 title: Google Drive to EPUB server
 covers: the Cloud Run service that lists the owner's Drive files and serves Google Docs as cleaned EPUBs to the KOReader plugin; its HTTP contract, QR pairing and Google sign-in, state in GCS, the EPUB cleanup, tests, local runs and deploys
-verified: 2026-11-17
+verified: 2026-11-18
 ---
 
 # Google Drive to EPUB server
@@ -28,7 +28,7 @@ flowchart LR
 | `src/gdriveepub/driveq.py` | `/api/files` query parameters to a Drive `q` and `orderBy` |
 | `src/gdriveepub/names.py` | file names: sanitised title, `Content-Disposition`, percent-encoded `X-File-Name` |
 | `src/gdriveepub/epubclean.py` | the EPUB cleanup, including external links unwrapped to underlined text (internal links kept) and image renames in the manifest |
-| `src/gdriveepub/einkimg.py` | images for 16-level e-ink: flattened on white, grayscale, autocontrast, fitted to 1072x1448, 4-bit PNG for flat images or grayscale JPEG for photos; SVG and undecodable images kept |
+| `src/gdriveepub/einkimg.py` | images for 16-level e-ink: flattened on white, grayscale, autocontrast, never upscaled; flat images (diagrams, screenshots) fitted within 2144x2896 (twice the 1072x1448 screen) as a 16-gray 4-bit PNG, photos fitted within 1072x1448 as a grayscale JPEG (decision record 0008); SVG and undecodable images kept |
 | `deploy.sh` | idempotent setup (service account, bucket, roles) and `gcloud run deploy --source .`, from a gitignored `.env` |
 
 ## HTTP contract
