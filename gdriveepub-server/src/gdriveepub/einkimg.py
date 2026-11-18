@@ -2,9 +2,11 @@
 
 Google exports Docs images as full-colour PNGs at their source size; a Kindle then scales and
 dithers each one on every page turn. Done once here instead: transparency flattened onto white,
-grayscale, autocontrast, fit within the screen (never upscaled), then either 16 gray levels in a
-4-bit PNG (diagrams, screenshots: few unique colours) or a grayscale JPEG (photos: many colours,
-where 16 flat levels would band and JPEG compresses far better). The display has 16 levels anyway.
+grayscale, autocontrast, then either 16 gray levels in a 4-bit PNG (diagrams, screenshots: few
+unique colours) or a grayscale JPEG (photos: many colours, where 16 flat levels would band and JPEG
+compresses far better). The display has 16 levels anyway. Nothing is ever upscaled. Photos fit
+within the screen; line art fits within twice the screen, because a wide diagram fitted to the
+screen ends up about 100 px tall and its text is unreadable even when zoomed in.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ import io
 from PIL import Image, ImageOps
 
 SCREEN = (1072, 1448)
+LINEART_MAX = (2 * SCREEN[0], 2 * SCREEN[1])  # 2144x2896: keeps diagram text legible when zoomed
 AUTOCONTRAST_CUTOFF = 1  # percent of darkest and lightest pixels clipped
 PHOTO_COLOURS = 4096  # more unique colours than this in a nearest-neighbour sample = photo
 SAMPLE = 256
@@ -46,14 +49,15 @@ def process_image(data: bytes) -> tuple[bytes, str] | None:
         if getattr(im, "n_frames", 1) > 1:
             return None
         if im.format == "JPEG":
-            im.draft("RGB", SCREEN)  # decode at reduced scale when the JPEG is much bigger
+            im.draft("RGB", LINEART_MAX)  # decode at reduced scale when the JPEG is much bigger
         im.load()
         im = _flatten(im)
         photo = _is_photo(im)
         g = ImageOps.autocontrast(im.convert("L"), cutoff=AUTOCONTRAST_CUTOFF)
         del im
-        if g.width > SCREEN[0] or g.height > SCREEN[1]:
-            g.thumbnail(SCREEN, Image.LANCZOS)
+        box = SCREEN if photo else LINEART_MAX
+        if g.width > box[0] or g.height > box[1]:
+            g.thumbnail(box, Image.LANCZOS)  # never upscales
         out = io.BytesIO()
         if photo:
             g.save(out, "JPEG", quality=JPEG_QUALITY, optimize=True)

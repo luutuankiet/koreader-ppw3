@@ -127,3 +127,41 @@ def test_small_image_never_upscaled_or_grown():
     res = process_image(tiny)
     assert res is None or Image.open(io.BytesIO(res[0])).size == (4, 4)
     assert process_image(b"garbage") is None
+
+
+def diagram_png(w, h) -> bytes:
+    """Line art: white background, dark text-like strokes, a few flat colours."""
+    im = Image.new("RGB", (w, h), (255, 255, 255))
+    for x in range(0, w, 7):
+        for y in range(h // 4, h // 2):
+            im.putpixel((x, y), (40, 40, 160))
+    for x in range(w // 8, w // 2):
+        im.putpixel((x, 3 * h // 4), (0, 0, 0))
+    return png(im)
+
+
+def test_wide_line_art_fits_twice_the_screen_as_16_gray_png():
+    res = process_image(diagram_png(4000, 400))
+    assert res is not None and res[1] == "png"
+    im = Image.open(io.BytesIO(res[0]))
+    assert im.format == "PNG" and im.mode == "P"
+    assert im.size == (2144, 214)  # 2x the 1072 screen width, aspect kept; was 1072x107 at 1x
+    assert len(im.convert("L").getcolors()) <= 16
+
+
+def test_tall_line_art_capped_at_twice_the_screen_height():
+    res = process_image(diagram_png(1000, 5000))
+    assert res is not None and res[1] == "png"
+    assert Image.open(io.BytesIO(res[0])).size == (579, 2896)
+
+
+def test_line_art_between_1x_and_2x_keeps_its_size():
+    res = process_image(diagram_png(1500, 200))  # wider than the screen, inside 2x: not resized
+    assert res is not None and res[1] == "png"
+    assert Image.open(io.BytesIO(res[0])).size == (1500, 200)
+
+
+def test_photo_still_fits_the_screen_not_twice_it():
+    res = process_image(photo_png(3000, 2000))
+    assert res is not None and res[1] == "jpeg"
+    assert Image.open(io.BytesIO(res[0])).size == (1072, 715)
