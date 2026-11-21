@@ -104,20 +104,52 @@ def _is_empty_block(p) -> bool:
     return True
 
 
-def _is_mono(el) -> bool:
-    return bool(MONO.search(dict(_parse_style(el.get("style", ""))).get("font-family", "")))
+RULE = re.compile(r"([^{}@]+)\{([^{}]*)\}")
+SIMPLE_CLASS = re.compile(r"^\.([\w-]+)$")
+# Some Docs exports carry no inline style at all and put everything in class rules in <head>
+# (.c0{font-size:12pt}); a size in pt ignores the reader's font size setting, so these go too.
+DROP_RULE = DROP_BLOCK | DROP_SPAN
+
+def _class_styles(css: str) -> dict[str, list[tuple[str, str]]]:
+    """Declarations of each simple class rule (.c12{...}), so a class-styled export is read like an inline one."""
+    out: dict[str, list[tuple[str, str]]] = {}
+    for sel, body in RULE.findall(css):
+        m = SIMPLE_CLASS.match(sel.strip())
+        if m:
+            out.setdefault(m.group(1), []).extend(_parse_style(body))
+    return out
 
 
-def _mono_spans(p, with_text: bool) -> bool:
+def _strip_rules(css: str) -> str:
+    def fix(m):
+        kept = [(k, v) for k, v in _parse_style(m.group(2)) if k not in DROP_RULE]
+        return m.group(1) + "{" + ";".join(f"{k}:{v}" for k, v in kept) + "}"
+    return RULE.sub(fix, css)
+
+
+def _style(el, classes: dict) -> dict[str, str]:
+    """Class rules first, then the inline style on top, as the cascade would."""
+    props = []
+    for cls in (el.get("class") or "").split():
+        props.extend(classes.get(cls, ()))
+    props.extend(_parse_style(el.get("style", "")))
+    return dict(props)
+
+
+def _is_mono(el, classes: dict) -> bool:
+    return bool(MONO.search(_style(el, classes).get("font-family", "")))
+
+
+def _mono_spans(p, with_text: bool, classes: dict) -> bool:
     spans = [s for s in p.iter(f"{{{XHTML}}}span") if not with_text or (s.text or "").strip("\u00a0 ")]
-    return bool(spans) and all(_is_mono(s) for s in spans)
+    return bool(spans) and all(_is_mono(s, classes) for s in spans)
 
 
-def _blank_code_line(p) -> bool:
+def _blank_code_line(p, classes: dict) -> bool:
     """An empty monospace paragraph between two code lines is a blank line inside a code block."""
     prev, nxt = p.getprevious(), p.getnext()
-    return (_mono_spans(p, False) and prev is not None and nxt is not None and _tag(prev) == "p"
-            and _tag(nxt) == "p" and _mono_spans(prev, True) and _mono_spans(nxt, True))
+    return (_mono_spans(p, False, classes) and prev is not None and nxt is not None and _tag(prev) == "p"
+            and _tag(nxt) == "p" and _mono_spans(prev, True, classes) and _mono_spans(nxt, True, classes))
 
 
 MARKER_RULE = re.compile(r"\.(lst-[\w-]+)\s*>\s*li:before\s*\{([^}]*)\}")
@@ -190,9 +222,9 @@ def _write_list_markers(body, css: str) -> int:
     return written
 
 
-def _is_rule_paragraph(p) -> bool:
+def _is_rule_paragraph(p, classes: dict) -> bool:
     """Docs exports a horizontal rule as an empty paragraph with a visible bottom or top border."""
-    st = dict(_parse_style(p.get("style", "")))
+    st = _style(p, classes)
     return any(st.get(f"border-{side}-style", "none") not in ("none", "hidden")
                and st.get(f"border-{side}-width", "1pt") not in ("0", "0pt", "0px") for side in ("bottom", "top"))
 
@@ -252,15 +284,16 @@ def clean_xhtml(data: bytes, renames: dict | None = None, base_dir: str = "") ->
 
     head = root.find("x:head", NS)
     google_css = "".join(st.text or "" for st in head.findall("x:style", NS)) if head is not None else ""
+    classes = _class_styles(google_css)
     _write_list_markers(body, google_css)
 
     for p in list(body.iter(f"{{{XHTML}}}p")):
-        if _is_empty_block(p) and _is_rule_paragraph(p):
+        if _is_empty_block(p) and _is_rule_paragraph(p, classes):
             hr = etree.Element(f"{{{XHTML}}}hr")
             hr.set("class", "gde-hr")
             hr.tail = p.tail
             p.getparent().replace(p, hr)
-        elif _is_empty_block(p) and _blank_code_line(p):
+        elif _is_empty_block(p) and _blank_code_line(p, classes):
             _add_class(p, "gde-code")
             span = next(p.iter(f"{{{XHTML}}}span"))
             span.text = "\u00a0"
@@ -281,7 +314,7 @@ def clean_xhtml(data: bytes, renames: dict | None = None, base_dir: str = "") ->
             if el.find("x:img", NS) is not None:
                 _restyle(el, DROP_IMG_WRAPPER)
                 continue
-            mono = _is_mono(el)
+            mono = _is_mono(el, classes)
             _restyle(el, DROP_SPAN)
             if mono:
                 _add_class(el, "gde-mono")
@@ -317,6 +350,7 @@ def clean_xhtml(data: bytes, renames: dict | None = None, base_dir: str = "") ->
             if st.text:
                 st.text = re.sub(r"@import\s+url\([^)]*\)\s*;?", "", st.text)  # remote fonts: no network on the Kindle
                 st.text = BEFORE_RULE.sub("", st.text)  # markers are now real text
+                st.text = _strip_rules(st.text)
         style = etree.SubElement(head, f"{{{XHTML}}}style")
         style.set("type", "text/css")
         style.text = CSS

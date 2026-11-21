@@ -107,3 +107,34 @@ def test_horizontal_rule_kept(epub_bytes):
     hrs = list(root.iter(f"{X}hr"))
     assert len(hrs) == 1
     assert etree.QName(hrs[0].getnext()).localname == "ol"
+
+
+CLASS_STYLED = (b'<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><head><style type="text/css">'
+                b'.c0{color:#303030;font-size:12pt;font-family:"Roboto";font-style:normal}'
+                b'.c13{font-weight:500;font-size:30pt;font-family:"Roboto"}'
+                b'.c51{font-size:12pt;font-family:"Roboto Mono"}'
+                b'.c2{padding-top:18pt;padding-bottom:4pt;line-height:1.15;text-align:left}'
+                b'.c3{height:12pt}.c9{border-bottom-style:solid;border-bottom-width:1pt;padding:0}'
+                b'p{margin:0;color:#303030;font-size:12pt;font-family:"Roboto"}'
+                b'h1{padding-top:20pt;font-size:30pt;line-height:1.15}'
+                b'.title{font-size:32pt;font-weight:500}</style></head><body>'
+                b'<h1 class="c2"><span class="c13">Story 1</span></h1>'
+                b'<p class="c2 c3"><span class="c0">Prose.</span></p>'
+                b'<p class="c9"><span class="c0"></span></p>'
+                b'<p class="c2"><span class="c51">a = 1</span></p>'
+                b'<p class="c2"><span class="c51">b = 2</span></p></body></html>')
+
+
+def test_sizes_in_the_head_stylesheet_follow_the_reader_font_size():
+    # Some Docs exports put every size in class rules in <head> (.c0{font-size:12pt}) and none
+    # inline. Sizes in pt ignore KOReader's font size setting, so resizing did nothing.
+    from gdriveepub.epubclean import clean_xhtml
+    out, stats = clean_xhtml(CLASS_STYLED)
+    root = etree.fromstring(out)
+    google_css = root.find(X + "head").findall(X + "style")[0].text
+    for prop in ("font-size", "line-height", "font-family", "height", "padding-top", "padding-bottom"):
+        assert prop + ":" not in google_css, prop
+    assert "color:#303030" in google_css and "font-weight:500" in google_css and "text-align:left" in google_css
+    assert len(list(root.iter(X + "hr"))) == 1  # rule paragraph found through its class
+    assert stats["code_lines"] == 2  # monospace found through the span's class
+    assert all("gde-mono" in s.get("class") for s in root.iter(X + "span") if "a = 1" in (s.text or ""))
