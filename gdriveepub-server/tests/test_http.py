@@ -288,3 +288,22 @@ def test_cleanup_file_api_keeps_images_stored(epub_bytes, tmp_path):
     imgs = [i for i in z.infolist() if i.filename.lower().endswith((".png", ".jpg", ".jpeg"))]
     assert imgs and all(i.compress_type == zipfile.ZIP_STORED for i in imgs)
     assert z.testzip() is None and stats["documents"] >= 1
+
+
+def test_file_info(env):
+    key = env.pair()
+    r = env.client.get("/api/files/doc1", headers=auth(key))
+    assert r.status_code == 200, r.text
+    j = r.json()
+    assert j["id"] == "doc1" and j["kind"] == "doc" and j["name"] == "Plan: Q1/Q2 ünïcode"
+    assert j["modifiedTime"] == j["modified_time"] == "2026-11-01T10:00:00.000Z" and j["trashed"] is False
+    r = env.client.get("/api/files/missing", headers=auth(key))
+    assert r.status_code == 404 and r.json()["error"] == "not_found"
+    assert env.client.get("/api/files/sheet1", headers=auth(key)).status_code == 415
+    assert env.client.get("/api/files/doc1").status_code == 401
+
+
+def test_list_items_carry_modified_time(env):
+    key = env.pair()
+    files = env.client.get("/api/files", headers=auth(key)).json()["files"]
+    assert files and all(f["modifiedTime"] == f["modified_time"] for f in files)

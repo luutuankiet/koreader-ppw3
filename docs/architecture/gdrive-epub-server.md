@@ -1,7 +1,7 @@
 ---
 title: Google Drive to EPUB server
 covers: the Cloud Run service that lists the owner's Drive files and serves Google Docs as cleaned EPUBs to the KOReader plugin; its HTTP contract, QR pairing and Google sign-in, state in GCS, the EPUB cleanup, tests, local runs and deploys
-verified: 2026-11-18
+verified: 2026-11-21
 ---
 
 # Google Drive to EPUB server
@@ -44,7 +44,8 @@ All JSON; errors are `{"error": "<code>", "message": "..."}`.
 | `GET /pair/<pair_id>/poll?secret=` | poll secret | `{"status":"pending"}`, then once `{"status":"approved","device_key":"..."}`; 403 `bad_secret`, 404 `pairing_expired` |
 | `GET /reauth` | none | Google sign-in without a pairing, to renew a dead refresh token |
 | `GET /api/status` | device key | `{"google":"ok"}` or `{"google":"reauth_needed","signin_url":...}` |
-| `GET /api/files` | device key | `{"files":[{"id","name","kind","modified_time","created_time","viewed_time","size"}],"next_page_token"}` |
+| `GET /api/files` | device key | `{"files":[{"id","name","kind","modified_time","modifiedTime","created_time","viewed_time","size"}],"next_page_token"}`; `modifiedTime` repeats `modified_time` |
+| `GET /api/files/<id>` | device key | one list item plus `"trashed"` (trashed files answer too); 404 `not_found`, 415 `unsupported` for other file types |
 | `GET /api/files/<id>/download` | device key | the file, chunked with no `Content-Length`; `Content-Disposition`, `X-File-Name` (percent-encoded UTF-8), `X-Modified-Time`. Docs over 10 MB go through the EPUB `exportLinks` URL; Google can take 30 s or more before the first byte, and nothing is sent until cleanup ends |
 
 `/api/files` takes `view=recent|search`, `q`, `modified_within` and `created_within` (`1d`, `1w`, `1m` = 30 days, `3m` = 91 days), `sort=viewed|modified|created|name`, `page_token`, `page_size` (default 25, max 100). Only Google Docs, PDFs and EPUBs that are not trashed. Drive cannot order full-text searches, so in `view=search` the sort applies within a page only.

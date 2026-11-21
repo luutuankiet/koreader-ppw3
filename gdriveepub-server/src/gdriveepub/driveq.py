@@ -82,6 +82,7 @@ def to_item(f: dict) -> dict:
         "name": f.get("name", ""),
         "kind": kind,
         "modified_time": f.get("modifiedTime"),
+        "modifiedTime": f.get("modifiedTime"),  # same value; the reading-list sync compares it to X-Modified-Time
         "created_time": f.get("createdTime"),
         "viewed_time": f.get("viewedByMeTime"),
         "size": int(size) if size is not None and kind != "doc" else None,

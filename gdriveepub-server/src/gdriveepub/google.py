@@ -102,7 +102,7 @@ class Google:
 
     async def get_meta(self, token: str, file_id: str) -> dict:
         r = await self.http.get(f"{DRIVE}/files/{file_id}", headers=self._headers(token),
-                                params={"fields": "id,name,mimeType,modifiedTime,size,trashed,exportLinks",
+                                params={"fields": "id,name,mimeType,modifiedTime,createdTime,viewedByMeTime,size,trashed,exportLinks",
                                         "supportsAllDrives": "true"})
         if r.status_code == 401:
             raise ReauthNeeded()

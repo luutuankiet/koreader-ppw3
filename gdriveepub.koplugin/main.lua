@@ -27,6 +27,7 @@ local Format = require("gdriveepub_format")
 local Http = require("gdriveepub_http")
 local ListWidget = require("gdriveepub_listwidget")
 local QrScreen = require("gdriveepub_qrscreen")
+local Source = require("gdriveepub_source")
 local State = require("gdriveepub_state")
 
 local POLL_SECONDS = 3
@@ -45,6 +46,7 @@ function GDrive:init()
     self.settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/gdriveepub.lua")
     self.http = Http.new{ scheduleIn = function(s, f) UIManager:scheduleIn(s, f) end }
     self.state = State.new()
+    self.api = self:makeApi()
     self.ui.menu:registerToMainMenu(self)
 end
 
@@ -385,7 +387,10 @@ local function openBook(ui, path)
     end
 end
 
-function GDrive:download(f, open_after)
+--- Download `f` ({id, name, kind}) to GDrive/<Format.fileName(f)> through a
+--- hidden .part file, then record its Drive source in the sidecar. No dialogs.
+--- cb(path, record) on success, cb(nil, nil, parsed) on failure (Api.parse shape).
+function GDrive:fetchFile(f, cb)
     local dir = self:downloadDir()
     if lfs.attributes(dir, "mode") ~= "directory" then lfs.mkdir(dir) end
     local name = Format.fileName(f)
@@ -393,26 +398,124 @@ function GDrive:download(f, open_after)
     local part = Format.joinPath(dir, "." .. name .. ".part")
     local req = Api.downloadRequest(self:baseUrl(), self:deviceKey(), f.id)
     req.sink_path, req.timeout, req.total_timeout = part, DOWNLOAD_BLOCK_TIMEOUT, DOWNLOAD_TOTAL_TIMEOUT
-    self:request(req, { raw = true, message = _("Downloading…") .. "\n" .. f.name .. "\n" .. _("Large documents can take a minute."),
-            retry = function() self:download(f, open_after) end }, function(parsed, res)
+    self.http(req, function(res)
         if not (res and res.status and res.status >= 200 and res.status < 300) then
             os.remove(part)
-            return self:handleError(parsed, function() self:download(f, open_after) end)
+            return cb(nil, nil, Api.parse(res, json.decode))
         end
         os.remove(final)
         local ok, err = os.rename(part, final)
-        if not ok then return self:info(_("Could not save the file: ") .. tostring(err)) end
-        local function doOpen()
-            if self.list then UIManager:close(self.list) self.list = nil end
-            openBook(self.ui, final)
+        if not ok then
+            os.remove(part)
+            return cb(nil, nil, { ok = false, error = "save_failed", message = _("Could not save the file: ") .. tostring(err) })
         end
-        if open_after then return doOpen() end
-        UIManager:show(ConfirmBox:new{
-            text = _("Saved to ") .. "GDrive/" .. name .. "\n\n" .. _("Open now?"),
-            ok_text = _("Open"), cancel_text = _("Later"),
-            ok_callback = doOpen,
-        })
+        local rec = Source.newRecord(f, res.headers)
+        local okw, werr = pcall(self.writeRecord, self, final, rec)
+        if not okw then logger.warn("gdriveepub: could not record the source of", final, werr) end
+        cb(final, rec)
     end)
+end
+
+--- The sidecar of `path`: the open book's own settings when it is the one being
+--- read (a second DocSettings would be overwritten when the reader closes).
+function GDrive:sidecar(path)
+    local doc = self.ui and self.ui.document
+    if doc and doc.file == path and self.ui.doc_settings then return self.ui.doc_settings end
+    return require("docsettings"):open(path)
+end
+
+function GDrive:readRecord(path) return Source.read(self:sidecar(path)) end
+function GDrive:writeRecord(path, rec) Source.write(self:sidecar(path), rec) end
+
+function GDrive:download(f, open_after)
+    local retry = function() self:download(f, open_after) end
+    NetworkMgr:runWhenOnline(function()
+        local msg = InfoMessage:new{ dismissable = false,
+            text = _("Downloading…") .. "\n" .. f.name .. "\n" .. _("Large documents can take a minute.") }
+        UIManager:show(msg) UIManager:forceRePaint()
+        self:fetchFile(f, function(final, _rec, parsed)
+            UIManager:close(msg)
+            if not final then
+                if parsed.error == "save_failed" then return self:info(parsed.message) end
+                return self:handleError(parsed, retry)
+            end
+            local function doOpen()
+                if self.list then UIManager:close(self.list) self.list = nil end
+                openBook(self.ui, final)
+            end
+            if open_after then return doOpen() end
+            UIManager:show(ConfirmBox:new{
+                text = _("Saved to ") .. "GDrive/" .. Format.fileName(f) .. "\n\n" .. _("Open now?"),
+                ok_text = _("Open"), cancel_text = _("Later"),
+                ok_callback = doOpen,
+            })
+        end)
+    end)
+end
+
+-- Headless API ------------------------------------------------------------
+-- For other plugins, as `ui.gdriveepub.api`. Never shows a dialog and never
+-- turns WiFi on: the caller makes sure the device is online. Callbacks get
+-- (true, result) or (false, err) where err is a server error code such as
+-- "not_found", "device_unauthorized", "google_reauth", "network", "not_paired".
+
+function GDrive:makeApi()
+    local api = {}
+    local function ready(cb)
+        if self:baseUrl() and self:deviceKey() then return true end
+        cb(false, "not_paired")
+        return false
+    end
+    local function errOf(parsed) return parsed.error or "server", parsed end
+
+    function api.isPaired() return self:baseUrl() ~= nil and self:deviceKey() ~= nil end
+    function api.folder() return self:downloadDir() end
+
+    --- cb(true, {id, name, kind, modifiedTime, trashed}) or cb(false, err)
+    function api.info(file_id, cb)
+        if not ready(cb) then return end
+        self.http(Api.infoRequest(self:baseUrl(), self:deviceKey(), file_id), function(res)
+            local parsed = Api.parse(res, json.decode)
+            if not parsed.ok then return cb(false, errOf(parsed)) end
+            local item = Api.item(parsed.data)
+            if not item then return cb(false, "bad_answer") end
+            cb(true, item)
+        end)
+    end
+
+    --- cb(true, items) with every Drive file whose Format.fileName is exactly `basename`
+    --- (first page of 100 search hits), or cb(false, err)
+    function api.findByFileName(basename, cb)
+        if not ready(cb) then return end
+        local q = Source.searchQuery(basename)
+        if q == "" then return cb(true, {}) end
+        local req = Api.listRequest(self:baseUrl(), self:deviceKey(), { view = "search", q = q, page_size = 100 })
+        req.timeout = LIST_TIMEOUT
+        self.http(req, function(res)
+            local parsed = Api.parse(res, json.decode)
+            if not parsed.ok then return cb(false, errOf(parsed)) end
+            cb(true, Source.matchByFileName(Api.files(parsed.data), basename, Format.fileName))
+        end)
+    end
+
+    --- item = {id, name, kind}; saves where the UI download does and records the source.
+    --- cb(true, path, record) or cb(false, err)
+    function api.download(item, cb)
+        if not ready(cb) then return end
+        self:fetchFile(item, function(path, rec, parsed)
+            if not path then return cb(false, errOf(parsed)) end
+            cb(true, path, rec)
+        end)
+    end
+
+    --- {id, modified, downloaded_at} or nil
+    function api.readRecord(path)
+        local ok, rec = pcall(self.readRecord, self, path)
+        return ok and rec or nil
+    end
+    function api.writeRecord(path, rec) self:writeRecord(path, rec) end
+
+    return api
 end
 
 -- Downloaded files ------------------------------------------------------

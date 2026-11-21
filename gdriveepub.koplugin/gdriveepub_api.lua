@@ -85,6 +85,10 @@ function Api.listRequest(base, key, params)
     return { method = "GET", url = withQuery(base .. "/api/files", params), headers = authHeaders(key) }
 end
 
+function Api.infoRequest(base, key, file_id)
+    return { method = "GET", url = base .. "/api/files/" .. Api.encode(file_id), headers = authHeaders(key) }
+end
+
 function Api.downloadRequest(base, key, file_id)
     local h = authHeaders(key)
     h["Accept"] = "*/*"
@@ -124,22 +128,33 @@ function Api.parse(res, decode)
     return out
 end
 
+local function str(v) return type(v) == "string" and v ~= "" and v or nil end
+
+--- One file of `/api/files` or the answer of `/api/files/<id>`, or nil if it has no id.
+--- `modifiedTime` and `modified_time` hold the same RFC 3339 string.
+function Api.item(f)
+    if type(f) ~= "table" or not str(f.id) then return nil end
+    local modified = str(f.modifiedTime) or str(f.modified_time)
+    return {
+        id = f.id,
+        name = str(f.name) or "Untitled",
+        kind = (f.kind == "pdf" or f.kind == "epub") and f.kind or "doc",
+        modifiedTime = modified,
+        modified_time = modified,
+        created_time = str(f.created_time),
+        viewed_time = str(f.viewed_time),
+        size = type(f.size) == "number" and f.size or tonumber(f.size),
+        trashed = f.trashed == true or nil,
+    }
+end
+
 --- Files from a list answer, only well-formed entries; plus the next page token.
 function Api.files(data)
     local out = {}
     if type(data) ~= "table" or type(data.files) ~= "table" then return out, nil end
     for _, f in ipairs(data.files) do
-        if type(f) == "table" and type(f.id) == "string" and f.id ~= "" then
-            out[#out + 1] = {
-                id = f.id,
-                name = (type(f.name) == "string" and f.name ~= "") and f.name or "Untitled",
-                kind = (f.kind == "pdf" or f.kind == "epub") and f.kind or "doc",
-                modified_time = type(f.modified_time) == "string" and f.modified_time or nil,
-                created_time = type(f.created_time) == "string" and f.created_time or nil,
-                viewed_time = type(f.viewed_time) == "string" and f.viewed_time or nil,
-                size = type(f.size) == "number" and f.size or tonumber(f.size),
-            }
-        end
+        local item = Api.item(f)
+        if item then out[#out + 1] = item end
     end
     local token = data.next_page_token
     if type(token) ~= "string" or token == "" then token = nil end

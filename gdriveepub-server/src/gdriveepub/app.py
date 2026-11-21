@@ -200,6 +200,15 @@ def create_app(settings: Settings, store: Store, google: Google | None = None, n
             items = driveq.sort_page(items, args.get("sort") or ("viewed" if view == "recent" else "modified"))
         return JSONResponse({"files": items, "next_page_token": data.get("nextPageToken")})
 
+    @api
+    async def file_info(request):
+        """One file's list item plus `trashed`; trashed files answer too, so a caller can tell
+        "gone from Drive" from "moved to the bin"."""
+        meta = await g.get_meta(await token(), request.path_params["file_id"])
+        if meta.get("mimeType") not in driveq.MIME:
+            return err(415, "unsupported", "Only Google Docs, PDFs and EPUBs")
+        return JSONResponse({**driveq.to_item(meta), "trashed": bool(meta.get("trashed"))})
+
     async def doc_epub(tok: str, fid: str, meta: dict, headers: dict):
         """Google Doc as a cleaned EPUB, any size.
 
@@ -267,5 +276,6 @@ def create_app(settings: Settings, store: Store, google: Google | None = None, n
         Route("/reauth", reauth),
         Route("/api/status", status),
         Route("/api/files", files),
+        Route("/api/files/{file_id}", file_info),
         Route("/api/files/{file_id}/download", download),
     ])
