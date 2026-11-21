@@ -1,7 +1,7 @@
 ---
 title: Synced reading list plugin
-covers: where the synced reading list sets the progress sync device id from the Kindle serial, fetches the server list, maps books to local files under any of their merged file names, builds rows, filters and searches, refreshes, shows the long-press pop-up, removes a book from the list, chooses which progress sync plugin it works with, and opens a book at its synced position
-verified: 2026-11-03
+covers: where the synced reading list sets the progress sync device id from the Kindle serial, fetches the server list, maps books to local files under any of their merged file names, builds rows, filters and searches, refreshes, shows the long-press pop-up, removes a book from the list, chooses which progress sync plugin it works with, opens a book at its synced position, downloads a missing Google Drive book on tap, links local books to Drive in the background, fetches a newer Drive version before syncing, and registers a gesture action
+verified: 2026-11-21
 ---
 
 # Synced reading list
@@ -16,6 +16,8 @@ flowchart LR
     M --> V[syncedhistory_listview.lua<br/>rows, filter, search, texts]
     M --> D[syncedhistory_deviceid.lua<br/>device id from /proc/usid]
     M --> B[syncedhistory_backend.lua<br/>which progress sync plugin]
+    M --> G[syncedhistory_drive.lua<br/>Drive source, backfill, versions]
+    M -->|ui.gdriveepub.api| GD[gdriveepub plugin<br/>find, info, download]
     M -->|KOSyncPullProgress or<br/>KOSyncServerlessPullProgress| K[chosen progress sync plugin]
 ```
 
@@ -25,23 +27,52 @@ Line numbers below are a starting point, not an address: jump roughly there, con
 |---|---|---|
 | `syncedhistory.koplugin/main.lua` | 32-47 | at file load, before any plugin instance: the progress sync device id from the Kindle serial (`syncedhistory_serial_path` in the reader settings points at a fake serial on the emulator) |
 | same | 51-158 | one settings object, the local index and the client, all kept for the whole run; `hasPlugin` (`ui.<name>` while a book is open, else `PluginLoader.enabled_plugins`), `getBackend`, reading the chosen plugin's login (live table, `settings/kosync.lua` or `settings/kosyncserverless.lua`, or for the built-in one the global `kosync` key up to v2024.11) |
-| same | 170-243 | `pullProgress`, `onReaderReady` (pushes the file name, pulls once for a book opened from the list), `openRow` (opens whichever alias is local) |
-| same | 245-318 | "show books not on this device" setting (`show_missing`, per device), `redrawList`, `fetchIntoList`, `refreshList` (forced local rescan, then a refetch) |
-| same | 320-452 | search dialog, title-bar menu (filter, search, Refresh), `removeRow` (confirm, one DELETE per alias, refetch), long-press pop-up with `Open` only for books on this device and `Remove from list` for every book |
-| same | 454-end | `showList` (cached copy at once, then the server's copy), the backend submenu and the menu entries |
+| same | 177-200 | Dispatcher action `synced_reading_list` ("Synced reading list" under General in the gesture manager) and its `ShowSyncedReadingList` event |
+| same | 204-265 | `pullProgress`, `pushDocument` helper (sends the Drive source, shows the clash message), `onReaderReady` (pushes the file name, pulls once for a book opened from the list, or after a Drive reload jumps to the saved percentage and pushes) |
+| same | 268-320 | `updateFromDrive` (asks Drive for the file's `modified`, downloads over the same path when newer), `shouldCheck` (paired, online, has a Drive record, not checked in the last 60 s), `checkDriveVersion(done)` (called by the progress sync's manual push and pull) |
+| same | 323-422 | `openRow` (opens whichever alias is local; else offers the Drive download when `ui.gdriveepub.api` exists), `downloadRow` (waits for the network, resolves the Drive id, downloads into `GDrive/`, adds the path to the local index, opens), `openPath` |
+| same | 424-495 | "show books not on this device" setting (`show_missing`, per device), `redrawList`, `fetchIntoList`, `refreshList` (forced local rescan, then a refetch) |
+| same | 497-628 | search dialog, title-bar menu (filter, search, Refresh), `removeRow` (confirm, one DELETE per alias, refetch), long-press pop-up with `Open` only for books on this device and `Remove from list` for every book |
+| same | 630-695 | `showList` (cached copy at once, then the server's copy), `startBackfill` (once per run, 2 s after the list opens) |
+| same | 697-end | the backend submenu and the menu entries |
+| `syncedhistory.koplugin/syncedhistory_drive.lua` | all | ISO time parsing and `isNewer`, `resolve` (the server's source id first, else exactly one Drive file with the same name), `sourceFor`, `clash`, `backfillRecord` and the sequential `backfill` (one request every 0.5 s) |
 | `syncedhistory.koplugin/syncedhistory_backend.lua` | all | `Backend.resolve(choice, has_plugin, log)`: the one place the choice becomes a module name, settings file and pull event; `serverless` chosen but not loaded falls back to the built-in plugin with one log line per run; `fromSources` does the same for the `--koreader` tests by which plugin folders exist |
 | `syncedhistory.koplugin/syncedhistory_listview.lua` | 78-208 | `ListView.deviceLabel` (model plus last 4 characters of the device id), `ListView.aliases` and `ListView.localMatch` (a row is local when any alias key is in the index), `ListView.rows`: newest first, percentage, device, on-device or missing |
 | same | 210-282 | `ListView.view` (filter, then case-insensitive plain-text search), `subtitle`, `emptyText` |
 | same | 284-end | `ListView.details`: the long-press text; `ListView.removeText`: the remove confirm |
 | `syncedhistory.koplugin/syncedhistory_client.lua` | 99-158 | credentials from the progress sync login, request headers, `cleanRow` (no JSON null in the cache, `aliases` included) |
-| same | 160-end | cached list, `fetchList`, `pushDocument` (tells the server a book's file name), `removeDocuments` (one DELETE per key; the cache drops the book only when every key went) |
+| same | 160-end | cached list, `fetchList`, `cachedSource`, `pushDocument` (tells the server a book's file name and Drive source; drops the source and flags a clash when the server already holds another Drive id for that name), `removeDocuments` (one DELETE per key; the cache drops the book only when every key went) |
 | `syncedhistory.koplugin/syncedhistory_http.lua` | 91-end | request without blocking the UI, polled with `scheduleIn` |
 | `syncedhistory.koplugin/syncedhistory_deviceid.lua` | 33-end | `derive` (uppercase md5 of `kosync:` plus the serial), `apply` (writes and flushes only when it differs; never logs the serial) |
-| `syncedhistory.koplugin/syncedhistory_localindex.lua` | 116-200 | scan of the home folder, `rescan` (automatic at most once per run on a lookup miss; the list's Refresh calls it directly), `lookup` of a sync key |
+| `syncedhistory.koplugin/syncedhistory_localindex.lua` | 116-215 | scan of the home folder, `rescan` (automatic at most once per run on a lookup miss; the list's Refresh calls it directly), `lookup` of a sync key, `paths` (every indexed file, for the backfill), `remember` (adds a just-downloaded file without a rescan) |
+| `kosyncserverless.koplugin/kosyncserverless_version.lua` | all | `Version.decide(local, server, server_ts, local_ts)`: `pull` when versions match or either is unknown, `percent` when the server's progress was saved on another version and is newer, `keep_local` otherwise |
+| `kosyncserverless.koplugin/main.lua` | 785-1010 | `doc_version` in every progress push, `manualSync(push)` behind both menu items and both Dispatcher events (runs `checkDriveVersion` first when the synced reading list is loaded), version-aware branch of the interactive pull, first push when the server has no progress and the book has a version |
+
+## Drive books
+
+A book downloaded by the `gdriveepub` plugin keeps `gdriveepub_source = {id, modified, downloaded_at}` in its sidecar. That source travels with the book's file name in `PUT /syncs/documents`, so another device can fetch the same file.
+
+```mermaid
+sequenceDiagram
+    participant L as Synced reading list
+    participant G as gdriveepub api
+    participant S as progress sync server
+    L->>L: tap a missing book
+    L->>G: resolve id (server source, else findByFileName)
+    G-->>L: id, name, modified
+    L->>G: download into GDrive/ under the same file name
+    L->>L: remember path, open book
+    L->>S: pull progress through the chosen sync plugin
+```
+
+- **Backfill.** Once per run, 2 s after the list opens, every indexed book whose sidecar has no Drive source is looked up by exact file name, one request every 0.5 s; exactly one match writes the source into the sidecar and pushes it, zero or several matches skip the book until the next run. A book with a source is never searched again, so a push that failed (offline, bad login) reaches the server only the next time the book is opened.
+- **Versions.** Each progress push sends `doc_version` (the Drive `modified` time). Opening from the list, or a manual push or pull, first asks Drive for a newer version; if there is one the file is replaced, reopened with `switchDocument`, and the saved percentage is restored. A pull of progress saved on an older version moves by percentage instead of the stored position.
+
+Checked live on the KOReader emulator: a missing Drive book with a source on the server downloaded into `GDrive/`, got its sidecar source, opened and pulled progress; the backfill matched three local Drive books through `findByFileName`; the gesture action appears under General and opens the list. The newer-version reload (`switchDocument` on the same path, `GotoPercent`) was not exercised live.
 
 ## Tests
 
-`test_localindex.lua`, `test_client.lua`, `test_listview.lua`, `test_deviceid.lua` and `test_backend.lua` sit next to the modules. Run each with `luajit <file>`, or on a device or the emulator with `--koreader` from the KOReader install folder, which uses the real md5 and lfs. `test_backend.lua` loads `main.lua` itself with every KOReader module faked. In `--koreader` mode, `test_listview.lua` and `test_localindex.lua` read the chosen progress sync plugin's source (`SYNCEDHISTORY_BACKEND=auto|kosync|serverless`, default `auto`), looked for in `plugins/` and next to this plugin's folder. The plugin is checked on KOReader `v2024.11`, `v2025.04` and `v2026.07.1`. When you use a KOReader API, look it up in `v2024.11` first: that is the oldest version supported, and `main.lua` already works around `filemanagerutil.openFile` being missing there.
+`test_localindex.lua`, `test_client.lua`, `test_listview.lua`, `test_deviceid.lua`, `test_backend.lua` and `test_drive.lua` sit next to the modules. Run each with `luajit <file>`, or on a device or the emulator with `--koreader` from the KOReader install folder, which uses the real md5 and lfs. `test_backend.lua` loads `main.lua` itself with every KOReader module faked. In `--koreader` mode, `test_listview.lua` and `test_localindex.lua` read the chosen progress sync plugin's source (`SYNCEDHISTORY_BACKEND=auto|kosync|serverless`, default `auto`), looked for in `plugins/` and next to this plugin's folder. The plugin is checked on KOReader `v2024.11`, `v2025.04` and `v2026.07.1`. When you use a KOReader API, look it up in `v2024.11` first: that is the oldest version supported, and `main.lua` already works around `filemanagerutil.openFile` being missing there.
 
 ## Deliberate choices
 
