@@ -459,6 +459,9 @@ end
 -- (true, result) or (false, err) where err is a server error code such as
 -- "not_found", "device_unauthorized", "google_reauth", "network", "not_paired".
 
+-- Set below, once deleteBook and realpath are defined.
+local deleteBookFn, realpathFn
+
 function GDrive:makeApi()
     local api = {}
     local function ready(cb)
@@ -514,6 +517,20 @@ function GDrive:makeApi()
         return ok and rec or nil
     end
     function api.writeRecord(path, rec) self:writeRecord(path, rec) end
+
+    --- Delete one downloaded book with its reading data, as the Downloads
+    --- screen does. Only a file directly inside the GDrive folder that is not
+    --- open in the reader. Returns true, or false and the reason.
+    function api.deleteBook(path)
+        local dir, name = tostring(path):match("^(.*)/([^/]+)$")
+        if not name then return false, "bad_name" end
+        local folder = self:downloadDir()
+        if not folder or realpathFn(dir) ~= realpathFn(folder) then return false, "outside" end
+        local plan = Files.planDelete(folder, { name }, self:openDocumentPath(), realpathFn)
+        if plan.skipped[1] then return false, plan.skipped[1].reason end
+        if not plan.paths[1] then return false, "missing" end
+        return deleteBookFn(plan.paths[1])
+    end
 
     return api
 end
@@ -653,6 +670,8 @@ local function deleteBook(path)
     if okc and ReadCollection.removeItem then pcall(ReadCollection.removeItem, ReadCollection, path) end
     return true
 end
+
+deleteBookFn, realpathFn = deleteBook, realpath
 
 local REASON = {
     open = "open in the reader",

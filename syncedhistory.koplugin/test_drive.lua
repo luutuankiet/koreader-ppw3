@@ -109,5 +109,24 @@ test("backfill stops when Drive is not paired", function()
     check(calls == 1 and stats.failed == 1, "kept going")
 end)
 
+test("backfill skips a book deleted since the index was read", function()
+    -- lfs.attributes on a missing file returns nil, message, errno.
+    local searched, written, stats = 0, 0, nil
+    Drive.backfill{
+        paths = { "/b/Gone.epub" },
+        readRecord = function() return nil end,
+        writeRecord = function() written = written + 1 end,
+        basename = function(p) return p:match("[^/]+$") end,
+        mtime = function() return nil, "cannot obtain information from file", 2 end,
+        find = function(_, cb)
+            searched = searched + 1
+            cb(true, { { id = "G", modifiedTime = "2026-01-01T00:00:00Z" } })
+        end,
+        done = function(s) stats = s end,
+    }
+    check(searched == 0 and written == 0, "searched or wrote a gone book")
+    check(stats.skipped == 1, "stats")
+end)
+
 print(string.format("%d passed, %d failed", passed, failed))
 os.exit(failed == 0 and 0 or 1)

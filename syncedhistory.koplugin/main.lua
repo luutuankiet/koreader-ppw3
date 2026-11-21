@@ -29,6 +29,8 @@ local filemanagerutil = require("apps/filemanager/filemanagerutil")
 local _ = require("gettext")
 
 local Backend = require("syncedhistory_backend")
+local Cleanup = require("syncedhistory_cleanup")
+local Tabs = require("syncedhistory_tabs")
 local Client = require("syncedhistory_client")
 local DeviceId = require("syncedhistory_deviceid")
 local Http = require("syncedhistory_http")
@@ -421,6 +423,80 @@ end
 
 -- Books not on this device are hidden until the reader asks for them; the
 -- choice is kept per device.
+-- What a book's sidecar says (Cleanup.facts), or nil when it has none.
+local function sidecarFacts(path)
+    local ok, DocSettings = pcall(require, "docsettings")
+    if not ok or not DocSettings:hasSidecarFile(path) then return nil end
+    local ds = DocSettings:open(path)
+    return Cleanup.facts(function(k) return ds:readSetting(k) end), ds
+end
+
+-- Remove finished Drive books: in the GDrive folder, gone from a list just
+-- fetched from the server, opened here, not open now, no annotations (see
+-- syncedhistory_cleanup.lua). Only after a manual sync or when the list opens.
+local function cleanupDrive(ui, list, info)
+    local api = driveApi(ui)
+    if not (api and api.deleteBook and api.folder) then return end
+    local folder = api.folder()
+    if not folder or lfs.attributes(folder, "mode") ~= "directory" then return end
+    local is_document = makeIsDocument()
+    local files = {}
+    for name in lfs.dir(folder) do
+        local path = folder .. "/" .. name
+        if name:sub(1, 1) ~= "." and is_document(name) and lfs.attributes(path, "mode") == "file" then
+            files[#files + 1] = { path = path, name = name, sidecar = sidecarFacts(path) }
+        end
+    end
+    local doc = (ui and ui.document) or (live_ui and live_ui.document)
+    local plan = Cleanup.decide{
+        fresh = info and info.fresh,
+        list = list,
+        files = files,
+        key_for = function(n) return getClient():keyFor(n) end,
+        open_path = doc and doc.file,
+    }
+    if plan.refused then
+        logger.info("syncedhistory: cleanup skipped:", plan.refused)
+        return
+    end
+    for _i, skip in ipairs(plan.skipped) do
+        logger.info("syncedhistory: cleanup keeps", skip.path, "-", skip.reason)
+    end
+    local removed = 0
+    for _i, path in ipairs(plan.delete) do
+        local ok, why = api.deleteBook(path)
+        if ok then
+            removed = removed + 1
+            logger.info("syncedhistory: cleanup removed", path)
+        else
+            logger.warn("syncedhistory: cleanup could not remove", path, why)
+        end
+    end
+    local text = Cleanup.message(removed, _)
+    if text then UIManager:show(InfoMessage:new{ text = text, timeout = 3 }) end
+end
+
+-- After a manual push or pull through the serverless progress sync.
+function SyncedHistory:onManualSyncDone()
+    local ui = self.ui
+    getClient():fetchList(function(list, info) cleanupDrive(ui, list, info) end)
+end
+
+-- A book's title from its sidecar, read once per path per run.
+local titles = {}
+local function localTitle(row)
+    if not row.path then return row.name end
+    if titles[row.path] == nil then
+        local _f, ds = sidecarFacts(row.path)
+        local props = ds and ds:readSetting("doc_props")
+        local t = type(props) == "table" and props.title
+        titles[row.path] = type(t) == "string" and t ~= "" and t or false
+    end
+    return titles[row.path] or row.name
+end
+
+local LAST_SEEN = "list_last_seen"
+
 local function showMissing()
     return getSettings():isTrue("show_missing")
 end
@@ -445,18 +521,41 @@ end
 -- not be fetched), query (the search, nil when none; it lives only as long as
 -- this list and is never saved).
 function SyncedHistory:redrawList(menu, state)
+    -- The search looks at the name only, not the device and time.
+    for _i, row in ipairs(state.rows) do
+        row.name = row.name or row.text
+        row.text = row.name
+    end
     local view = ListView.view(state.rows, { show_missing = showMissing(), query = state.query })
+    local now = os.time()
+    local tabs = Tabs.split(view.rows, {
+        now = now,
+        device_id = G_reader_settings:readSetting("device_id"),
+        last_seen = state.last_seen,
+    })
+    state.counts = { new = #tabs.new, recent = #tabs.recent, old = #tabs.old }
     local items = {}
-    for i, row in ipairs(view.rows) do
+    for i, row in ipairs(tabs[state.tab]) do
+        row.text, row.mandatory = Tabs.rowText(row, {
+            now = now,
+            title = localTitle,
+            device = function(r)
+                return ListView.deviceLabel(r.device or _(ListView.UNKNOWN_DEVICE), r.device_id)
+            end,
+            gettext = _,
+        })
         row.callback = function() self:openRow(menu, row) end
         items[i] = row
     end
     local empty = ListView.emptyText(view, { empty = state.empty, gettext = _ })
+    if not empty and #items == 0 then empty = _(Tabs.EMPTY[state.tab]) end
     if empty then
         items[1] = { text = empty, select_enabled = false, dim = true }
     end
+    local subtitle = _(Tabs.TITLES[state.tab]) .. " · "
+        .. ListView.subtitle(view, { status = state.status, gettext = _ })
     -- itemnumber nil: switchItemTable goes back to page 1.
-    menu:switchItemTable(nil, items, nil, nil, ListView.subtitle(view, { status = state.status, gettext = _ }))
+    menu:switchItemTable(nil, items, nil, nil, subtitle)
 end
 
 -- Fetch the server list into the open list screen. The cached copy is shown
@@ -480,6 +579,10 @@ function SyncedHistory:fetchIntoList(menu, state)
         state.list = list
         state.rows = buildRows(list)
         self:redrawList(menu, state)
+        if state.cleanup then
+            state.cleanup = nil
+            cleanupDrive(self.ui, list, info)
+        end
     end)
 end
 
@@ -526,7 +629,21 @@ end
 -- the search while one is active, and refresh.
 function SyncedHistory:showListMenu(menu, state)
     local dialog
+    local tab_row = {}
+    for i, tab in ipairs(Tabs.ORDER) do
+        local n = state.counts and state.counts[tab]
+        tab_row[i] = {
+            text = (state.tab == tab and "✓ " or "") .. _(Tabs.TITLES[tab])
+                .. (n and " (" .. n .. ")" or ""),
+            callback = function()
+                UIManager:close(dialog)
+                state.tab = tab
+                self:redrawList(menu, state)
+            end,
+        }
+    end
     local buttons = {
+        tab_row,
         { {
             -- The marks CheckButton draws for a checkbox.
             text = (showMissing() and "✓ " or "□ ") .. _("Show books not on this device"),
@@ -634,6 +751,11 @@ function SyncedHistory:showList()
         rows = buildRows(cached),
         status = _(ListView.SYNCING),
         empty = _(ListView.SYNCING),
+        tab = Tabs.RECENT,
+        -- New means pushed by another device since the list was last left;
+        -- this opening keeps comparing against the old time.
+        last_seen = getSettings():readSetting(LAST_SEEN),
+        cleanup = true,
     }
     local menu = Menu:new{
         name = "syncedhistory_list",
@@ -645,8 +767,20 @@ function SyncedHistory:showList()
         is_popout = false,
         title_bar_fm_style = true,
         title_bar_left_icon = "appbar.menu",
-        single_line = true,
+        -- A row is the name, then the device and when, wrapped. The default
+        -- font for 8 rows (22) fits two lines and cuts the device off a long
+        -- name; 16 fits three.
+        multilines_forced = true,
+        items_per_page = 8,
+        items_font_size = 16,
     }
+    -- Closing the list, or opening a book from it, marks everything seen.
+    menu.onCloseWidget = function(m)
+        getSettings():saveSetting(LAST_SEEN, os.time())
+        getSettings():flush()
+        local parent = Menu.onCloseWidget
+        if parent then return parent(m) end
+    end
     menu.onLeftButtonTap = function() self:showListMenu(menu, state) end
     -- MenuItem calls self.menu:onMenuHold(item, pos); the default does nothing.
     menu.onMenuHold = function(_menu, item)

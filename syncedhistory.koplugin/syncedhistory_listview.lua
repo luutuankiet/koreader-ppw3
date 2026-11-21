@@ -193,6 +193,9 @@ function ListView.rows(list, opts)
                 device = type(row.device) == "string" and row.device ~= "" and row.device or nil,
                 timestamp = type(row.timestamp) == "number" and row.timestamp or nil,
                 device_id = type(row.device_id) == "string" and row.device_id ~= "" and row.device_id or nil,
+                -- Where the book came from, for the Drive download.
+                source = type(row.source) == "table" and row.source or nil,
+                has_drive = type(row.source) == "table" and row.source.id ~= nil or nil,
             }
         end
     end

@@ -803,6 +803,7 @@ end
 -- reopens the book, and the reopened reader pushes. Otherwise carry on.
 function KOSyncServerless:manualSync(push)
     local function run()
+        self.manual_sync = true
         if push then self:updateProgress(true, true) else self:getProgress(true, true) end
     end
     local list = self.ui and self.ui.syncedhistory
@@ -810,6 +811,15 @@ function KOSyncServerless:manualSync(push)
     list:checkDriveVersion(function(replaced)
         if not replaced then run() end
     end)
+end
+
+-- After a manual push or pull went through, tell the synced reading list,
+-- which may then remove finished Drive books. Automatic syncs never call it.
+function KOSyncServerless:manualSyncDone(ok)
+    if not self.manual_sync then return end
+    self.manual_sync = nil
+    local list = ok and self.ui and self.ui.syncedhistory
+    if list and list.onManualSyncDone then list:onManualSyncDone() end
 end
 
 local function doneHandle()
@@ -886,6 +896,7 @@ function KOSyncServerless:updateProgress(ensure_networking, interactive, on_susp
     local handle = self:pushNow(function(ok)
         if close_waking then close_waking() end
         if interactive then
+            self:manualSyncDone(ok)
             if ok then
                 UIManager:show(InfoMessage:new{
                     text = _("Progress has been pushed."),
@@ -950,6 +961,7 @@ function KOSyncServerless:getProgress(ensure_networking, interactive)
             if ok then
                 self.pull_timestamp = UIManager:getElapsedTimeSinceBoot()
             end
+            if interactive then self:manualSyncDone(ok) end
             -- The book may have been closed while the request ran.
             if not self.ui or not self.ui.document then return end
             if not ok or not body then

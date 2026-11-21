@@ -153,6 +153,15 @@ function Drive.backfill(opts)
             return
         end
         local name = opts.basename(path)
+        -- One value only: lfs.attributes on a missing file also returns a
+        -- message, which would land in backfillRecord's `now`.
+        local mtime = (opts.mtime(path))
+        if not mtime then
+            -- Deleted since the index was read, by the Drive cleanup or by hand.
+            stats.skipped = stats.skipped + 1
+            info("syncedhistory: backfill skipped", name, "file is gone")
+            return step()
+        end
         opts.find(name, function(ok, items)
             if not ok then
                 stats.failed = stats.failed + 1
@@ -166,7 +175,7 @@ function Drive.backfill(opts)
                 stats.skipped = stats.skipped + 1
                 info("syncedhistory: backfill skipped", name, "matches:", type(items) == "table" and #items or 0)
             else
-                local rec = Drive.backfillRecord(items[1], opts.mtime(path))
+                local rec = Drive.backfillRecord(items[1], mtime)
                 opts.writeRecord(path, rec)
                 stats.matched = stats.matched + 1
                 info("syncedhistory: backfill matched", name, rec.id, rec.modified)
