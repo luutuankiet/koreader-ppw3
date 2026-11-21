@@ -193,6 +193,23 @@ function LocalIndex:lookup(key)
     return nil
 end
 
+--- Every cached book path, sorted, so callers walk them in a stable order.
+function LocalIndex:paths()
+    local out = {}
+    for _, path in pairs(self.cache) do out[#out + 1] = path end
+    table.sort(out)
+    return out
+end
+
+--- Add a file that just arrived (a download) without a full rescan.
+function LocalIndex:remember(path)
+    self.cache[self:keyFor(path)] = path
+    if self.settings then
+        self.settings:saveSetting(LocalIndex.SETTINGS_KEY, self.cache)
+        self.settings:flush()
+    end
+end
+
 --- Time a full scan without changing the cache.
 -- @treturn int distinct keys
 -- @treturn number milliseconds

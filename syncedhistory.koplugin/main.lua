@@ -9,6 +9,7 @@ syncedhistory_backend.lua) to pull its latest position.
 local ButtonDialog = require("ui/widget/buttondialog")
 local ConfirmBox = require("ui/widget/confirmbox")
 local DataStorage = require("datastorage")
+local Dispatcher = require("dispatcher")
 local DocumentRegistry = require("document/documentregistry")
 local Event = require("ui/event")
 local InfoMessage = require("ui/widget/infomessage")
@@ -16,6 +17,7 @@ local InputDialog = require("ui/widget/inputdialog")
 local LuaSettings = require("luasettings")
 local Menu = require("ui/widget/menu")
 local PluginLoader = require("pluginloader")
+local NetworkMgr = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local json = require("json")
@@ -30,6 +32,7 @@ local Backend = require("syncedhistory_backend")
 local Client = require("syncedhistory_client")
 local DeviceId = require("syncedhistory_deviceid")
 local Http = require("syncedhistory_http")
+local Drive = require("syncedhistory_drive")
 local ListView = require("syncedhistory_listview")
 local LocalIndex = require("syncedhistory_localindex")
 
@@ -55,6 +58,12 @@ if not ok_id then logger.warn("syncedhistory: device id not set:", err_id) end
 local index, client, settings
 -- Path of the book opened from the list, until its reader is ready.
 local pending_pull
+-- A book reopened after a Drive update: { path, percent (0..1), push }.
+local pending_percent
+-- Last Drive version check per path (seconds), so one open never checks twice.
+local version_checked = {}
+-- The background backfill runs at most once per run.
+local backfill_started
 
 -- One settings object for the whole plugin: two LuaSettings opened on the
 -- same file would each flush their own copy and drop the other's keys.
@@ -164,7 +173,23 @@ SyncedHistory.getIndex = getIndex
 SyncedHistory.getClient = getClient
 SyncedHistory.getBackend = getBackend
 
+-- A gesture or quick menu action, in the file browser and in a book.
+function SyncedHistory:onDispatcherRegisterActions()
+    Dispatcher:registerAction("synced_reading_list", {
+        category = "none",
+        event = "ShowSyncedReadingList",
+        title = _(ListView.TITLE),
+        general = true,
+    })
+end
+
+function SyncedHistory:onShowSyncedReadingList()
+    self:showList()
+    return true
+end
+
 function SyncedHistory:init()
+    self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
 end
 
@@ -192,18 +217,100 @@ function SyncedHistory:pullProgress()
     self.ui:handleEvent(Event:new(backend.pull_event))
 end
 
+-- The Google Drive plugin's headless API, or nil when it is not enabled.
+local function driveApi(ui)
+    local g = ui and ui.gdriveepub
+    return g and g.api or nil
+end
+
+local function showText(text)
+    UIManager:show(InfoMessage:new{ text = _(text), timeout = 3 })
+end
+
+-- Tell the server a book's file name, and its Drive source when it has one.
+-- A server row naming another Drive file keeps it, and the reader is told.
+local function pushDocument(ui, path)
+    local api = driveApi(ui)
+    local source = api and Drive.sourceFor(api.readRecord(path))
+    getClient():pushDocument(path, function(_, info)
+        if info and info.clash then showText(Drive.MSG_CLASH) end
+    end, source)
+end
+
 -- Every book open tells the server the book's file name, so other devices
 -- can show it in their list. A book opened from the list also pulls its
--- position, after the reader has restored the local one.
+-- position, after the reader has restored the local one. A book reopened
+-- after a Drive update goes to its old percentage and pushes it.
 function SyncedHistory:onReaderReady()
     live_ui = self.ui
     local file = self.ui.document and self.ui.document.file
-    if file then getClient():pushDocument(file) end
+    if file then pushDocument(self.ui, file) end
     local pull = file ~= nil and file == pending_pull
     pending_pull = nil
-    if pull then
+    local at = pending_percent and file == pending_percent.path and pending_percent
+    pending_percent = nil
+    if at then
+        UIManager:nextTick(function()
+            self.ui:handleEvent(Event:new("GotoPercent", at.percent * 100))
+            if at.push and self.ui.kosyncserverless then
+                UIManager:scheduleIn(1, function()
+                    if self.ui.kosyncserverless then self.ui.kosyncserverless:pushNow() end
+                end)
+            end
+        end)
+    elseif pull then
         UIManager:nextTick(function() self:pullProgress() end)
     end
+end
+
+-- Is Drive's copy of `path` newer than the one on disk? Downloads it when it
+-- is. cb(new_path) after a download, cb(nil) otherwise. Quiet on errors.
+local function updateFromDrive(api, path, rec, cb)
+    version_checked[path] = os.time()
+    api.info(rec.id, function(ok, item)
+        if not ok or type(item) ~= "table" or item.trashed
+            or not Drive.isNewer(item.modifiedTime, rec.modified) then
+            if not ok then logger.info("syncedhistory: version check failed:", item) end
+            return cb(nil)
+        end
+        logger.info("syncedhistory: newer on Drive:", path, rec.modified, "->", item.modifiedTime)
+        local note = InfoMessage:new{ text = _(Drive.MSG_UPDATING) }
+        UIManager:show(note)
+        api.download(item, function(ok2, new_path)
+            UIManager:close(note)
+            if not ok2 then
+                logger.warn("syncedhistory: update download failed:", new_path)
+                return cb(nil)
+            end
+            getIndex():remember(new_path)
+            cb(new_path)
+        end)
+    end)
+end
+
+-- Only when online, never turning WiFi on, and once per book per minute.
+local function shouldCheck(api, path)
+    if not api or not api.isPaired() or not NetworkMgr:isOnline() then return nil end
+    if os.time() - (version_checked[path] or 0) < 60 then return nil end
+    return api.readRecord(path)
+end
+
+-- For the progress sync's manual push and pull: when Drive holds a newer
+-- version of the open book, download it, reopen it at the current
+-- percentage and push from there. done(true) then, done(false) otherwise.
+function SyncedHistory:checkDriveVersion(done)
+    local file = self.ui.document and self.ui.document.file
+    local api = driveApi(self.ui)
+    local rec = file and shouldCheck(api, file)
+    if not rec then return done(false) end
+    local doc = self.ui.document
+    local percent = doc.info.has_pages and self.ui.paging:getLastPercent() or self.ui.rolling:getLastPercent()
+    updateFromDrive(api, file, rec, function(new_path)
+        if not new_path then return done(false) end
+        pending_percent = { path = new_path, percent = percent or 0, push = true }
+        done(true)
+        self.ui:switchDocument(new_path)
+    end)
 end
 
 function SyncedHistory:onCloseDocument()
@@ -228,12 +335,80 @@ function SyncedHistory:openRow(menu, row)
     -- the book's file names counts; the built-in sync then pulls by the
     -- opened file's own key.
     local path = row.document and ListView.localMatch(row, function(key) return getIndex():lookup(key) end)
+    local api = driveApi(self.ui)
     if not path then
         logger.info("syncedhistory: not on this device:", row.document)
-        UIManager:show(InfoMessage:new{ text = _(ListView.NOT_FOUND), timeout = 3 })
+        if not api then
+            UIManager:show(InfoMessage:new{ text = _(ListView.NOT_FOUND), timeout = 3 })
+            return
+        end
+        UIManager:show(ConfirmBox:new{
+            text = _(Drive.MSG_ASK),
+            ok_text = _("Download"),
+            ok_callback = function() self:downloadRow(menu, row, api) end,
+        })
         return
     end
+    local rec = shouldCheck(api, path)
+    if rec then
+        updateFromDrive(api, path, rec, function(new_path)
+            self:openPath(menu, new_path or path, new_path ~= nil)
+        end)
+        return
+    end
+    self:openPath(menu, path)
+end
+
+-- Download a row's book from Drive into the GDrive folder under the same
+-- file name (so its sync key, and its progress, stay the same), then open it.
+function SyncedHistory:downloadRow(menu, row, api)
+    if NetworkMgr:willRerunWhenOnline(function() self:downloadRow(menu, row, api) end) then return end
+    if not api.isPaired() then return showText(Drive.MSG_NOT_PAIRED) end
+    local note = InfoMessage:new{ text = _(Drive.MSG_DOWNLOADING) }
+    UIManager:show(note)
+    local function fail(reason)
+        UIManager:close(note)
+        logger.info("syncedhistory: no Drive download for", row.filename, reason)
+        if reason == "none" or reason == "no_name" or reason == "not_found" then
+            showText(Drive.MSG_NONE)
+        elseif reason == "many" then
+            showText(Drive.MSG_MANY)
+        elseif reason == "not_paired" then
+            showText(Drive.MSG_NOT_PAIRED)
+        else
+            showText(Drive.MSG_FAILED)
+        end
+    end
+    local function fetch(item)
+        api.download(item, function(ok, path)
+            if not ok then return fail(path) end
+            UIManager:close(note)
+            getIndex():remember(path)
+            logger.info("syncedhistory: downloaded", path)
+            self:openPath(menu, path)
+        end)
+    end
+    Drive.resolve(row, api.findByFileName, function(item, reason)
+        if not item then return fail(reason) end
+        if item.name then return fetch(item) end
+        -- Only the id came from the server: ask Drive for the name and kind.
+        api.info(item.id, function(ok, full)
+            if not ok then return fail(full) end
+            if type(full) ~= "table" or full.trashed then return fail("none") end
+            fetch(full)
+        end)
+    end)
+end
+
+-- Open a local book from the list and pull its synced position. `reload`:
+-- the file on disk was just replaced, so reopen it even when it is open.
+function SyncedHistory:openPath(menu, path, reload)
     UIManager:close(menu)
+    if reload and self.ui.document and self.ui.document.file == path then
+        pending_pull = path
+        self.ui:switchDocument(path)
+        return
+    end
     if self.ui.document and self.ui.document.file == path then
         -- Already open: no new reader to wait for.
         self:pullProgress()
@@ -481,6 +656,34 @@ function SyncedHistory:showList()
     self:redrawList(menu, state)
     UIManager:show(menu)
     self:fetchIntoList(menu, state)
+    self:startBackfill()
+end
+
+-- After the list renders, give local books without a Drive record one, by an
+-- exact file name search, one request at a time, at most once per run, and
+-- only while online. Each match also pushes the book's source.
+function SyncedHistory:startBackfill()
+    local api = driveApi(self.ui)
+    if backfill_started or not api or not api.isPaired() or not NetworkMgr:isOnline() then return end
+    backfill_started = true
+    local ui = self.ui
+    UIManager:scheduleIn(2, function()
+        Drive.backfill{
+            paths = getIndex():paths(),
+            readRecord = api.readRecord,
+            writeRecord = api.writeRecord,
+            find = api.findByFileName,
+            basename = LocalIndex.basename,
+            mtime = function(p) return lfs.attributes(p, "modification") end,
+            push = function(p) pushDocument(ui, p) end,
+            log = logger,
+            next = function(f) UIManager:scheduleIn(0.5, f) end,
+            done = function(stats)
+                logger.info("syncedhistory: backfill done, matched", stats.matched,
+                    "skipped", stats.skipped, "failed", stats.failed)
+            end,
+        }
+    end)
 end
 
 local BACKEND_TEXT = {

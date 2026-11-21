@@ -142,6 +142,20 @@ local function cleanAliases(list)
     return #out > 0 and out or nil
 end
 
+-- A source is a small object of strings (kind, id, modified); anything else
+-- in it is dropped.
+local function cleanSource(src)
+    if type(src) ~= "table" then return nil end
+    local out, any = {}, false
+    for k, v in pairs(src) do
+        if type(k) == "string" and type(v) == "string" then
+            out[k] = v
+            any = true
+        end
+    end
+    return any and out or nil
+end
+
 local function cleanRow(row)
     if type(row) ~= "table" or type(row.document) ~= "string" or row.document == "" then
         return nil
@@ -154,6 +168,8 @@ local function cleanRow(row)
         timestamp = num(row.timestamp),
         filename = str(row.filename),
         aliases = cleanAliases(row.aliases),
+        source = cleanSource(row.source),
+        doc_version = str(row.doc_version),
     }
 end
 Client._cleanRow = cleanRow
@@ -231,9 +247,14 @@ end
 Tell the server the file name of a book, fire and forget.
 
 Failures are only logged. Does nothing when the built-in sync settings are
-unusable. `done(ok)` is optional, for tests and checks.
+unusable. `done(ok, info)` is optional, for tests and checks.
+
+`source` (optional) is where the book came from, {kind, id, modified}. It is
+not sent when the cached list row already names another file of the same
+kind: the first book keeps the name, and info.clash is true. The server's
+answer echoes what it stored; another id there also sets info.clash.
 ]]
-function Client:pushDocument(path, done)
+function Client:pushDocument(path, done, source)
     done = done or noop
     local filename = LocalIndex.basename(path)
     if filename == "" then done(false); return end
@@ -244,22 +265,49 @@ function Client:pushDocument(path, done)
         return
     end
     local document = self:keyFor(filename)
+    local clash = false
+    if source then
+        local stored = self:cachedSource(document)
+        if stored and stored.kind == source.kind and stored.id ~= source.id then
+            self.log.warn("syncedhistory: another source already uses", filename, stored.id)
+            clash, source = true, nil
+        end
+    end
     self.request({
         method = "PUT",
         url = creds.server .. "/syncs/documents",
         headers = headersFor(creds, true),
-        body = self.json_encode({ document = document, filename = filename }),
+        body = self.json_encode({ document = document, filename = filename, source = source }),
         timeout = Client.TIMEOUT,
     }, function(res)
         res = res or {}
         if res.status == 200 then
             self.log.dbg("syncedhistory: pushed file name for", document)
-            done(true)
+            if source and type(res.body) == "string" then
+                local ok, decoded = pcall(self.json_decode, res.body)
+                local echoed = ok and type(decoded) == "table" and cleanSource(decoded.source)
+                if echoed and echoed.kind == source.kind and echoed.id ~= source.id then
+                    clash = true
+                end
+            end
+            done(true, { clash = clash })
         else
             self.log.warn("syncedhistory: document push failed:", res.status, res.err)
             done(false)
         end
     end)
+end
+
+--- The source the cached list holds for a key (a row's document or alias).
+function Client:cachedSource(key)
+    for _, row in ipairs(self:cachedList() or {}) do
+        local hit = row.document == key
+        for _, a in ipairs(type(row.aliases) == "table" and row.aliases or {}) do
+            if a.document == key then hit = true end
+        end
+        if hit then return row.source end
+    end
+    return nil
 end
 
 -- Drop the given keys from the cached list, so a removed book does not come

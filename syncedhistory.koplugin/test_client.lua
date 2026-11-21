@@ -355,6 +355,43 @@ test("push failure is only logged", function()
     check(#log_lines > before and log_lines[#log_lines]:find("^warn"), "failure not logged")
 end)
 
+test("cleanRow keeps a string-only source and a string doc_version", function()
+    local row = Client._cleanRow({
+        document = "k1", filename = "A.epub",
+        source = { kind = "gdrive", id = "1AbC", junk = 5 },
+        doc_version = "2026-11-21T10:00:00Z",
+    })
+    check(row.source.kind == "gdrive" and row.source.id == "1AbC", "source lost")
+    check(row.source.junk == nil, "non-string field kept")
+    check(row.doc_version == "2026-11-21T10:00:00Z", "doc_version lost")
+    local bare = Client._cleanRow({ document = "k2", source = {}, doc_version = {} })
+    check(bare.source == nil, "empty source kept")
+    check(bare.doc_version == nil, "JSON null doc_version kept")
+end)
+
+test("pushDocument sends the source", function()
+    local client, http = newClient(GOOD, { status = 200, body = env.json_encode({}) })
+    local got
+    client:pushDocument("/books/Dune.epub", function(ok, info) got = { ok = ok, info = info } end,
+        { kind = "gdrive", id = "1AbC", modified = "2026-11-21T10:00:00Z" })
+    local body = env.json_decode(http.calls[1].body)
+    check(body.source and body.source.id == "1AbC", "source not sent")
+    check(got.ok and not got.info.clash, "unexpected clash")
+end)
+
+test("pushDocument keeps the server's other Drive file", function()
+    local settings = env.newSettings()
+    local client, http = newClient(GOOD, { status = 200, body = env.json_encode({}) }, settings)
+    local key = client:keyFor("Dune.epub")
+    client:saveList({ { document = key, filename = "Dune.epub", source = { kind = "gdrive", id = "OTHER" } } })
+    local got
+    client:pushDocument("/books/Dune.epub", function(ok, info) got = info end,
+        { kind = "gdrive", id = "1AbC" })
+    local body = env.json_decode(http.calls[1].body)
+    check(body.source == nil, "overwrote the server's source")
+    check(got and got.clash, "clash not reported")
+end)
+
 if mode == "koreader" then
     -- The subprocess transport, with the network part swapped for a stub
     -- that runs in the child. A tiny scheduler stands in for UIManager.

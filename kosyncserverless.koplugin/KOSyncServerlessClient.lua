@@ -124,6 +124,7 @@ function KOSyncServerlessClient:push(item, cb, opts)
             percentage = item.percentage,
             device = item.device,
             device_id = item.device_id,
+            doc_version = item.doc_version,
         },
         on_attempt = opts.on_attempt,
     }, cb)

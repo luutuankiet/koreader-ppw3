@@ -19,6 +19,7 @@ local util = require("util")
 local CarryOver = require("kosyncserverless_carryover")
 local Retry = require("kosyncserverless_retry")
 local Sleep = require("kosyncserverless_sleep")
+local Version = require("kosyncserverless_version")
 local T = require("ffi/util").template
 local _ = require("gettext")
 
@@ -461,7 +462,7 @@ If set to 0, updating progress based on page turns will be disabled.]]),
                     return self.settings.userkey ~= nil
                 end,
                 callback = function()
-                    self:updateProgress(true, true)
+                    self:manualSync(true)
                 end,
             },
             {
@@ -470,7 +471,7 @@ If set to 0, updating progress based on page turns will be disabled.]]),
                     return self.settings.userkey ~= nil
                 end,
                 callback = function()
-                    self:getProgress(true, true)
+                    self:manualSync(false)
                 end,
                 separator = true,
             },
@@ -786,7 +787,29 @@ function KOSyncServerless:currentProgressItem()
         percentage = self:getLastPercent(),
         device = self.settings.kosync_hostname or Device.model,
         device_id = self.device_id,
+        doc_version = self:docVersion(),
     }
+end
+
+-- The version of the file on disk, for a book downloaded from Google Drive:
+-- the Drive modifiedTime its sidecar records. nil for any other book.
+function KOSyncServerless:docVersion()
+    local ds = self.ui and self.ui.doc_settings
+    return ds and Version.fromRecord(ds:readSetting("gdriveepub_source")) or nil
+end
+
+-- Manual push or pull. First the synced reading list may check Google Drive
+-- for a newer version of this book: when it finds one it downloads it and
+-- reopens the book, and the reopened reader pushes. Otherwise carry on.
+function KOSyncServerless:manualSync(push)
+    local function run()
+        if push then self:updateProgress(true, true) else self:getProgress(true, true) end
+    end
+    local list = self.ui and self.ui.syncedhistory
+    if not (list and list.checkDriveVersion) then return run() end
+    list:checkDriveVersion(function(replaced)
+        if not replaced then run() end
+    end)
 end
 
 local function doneHandle()
@@ -936,12 +959,15 @@ function KOSyncServerless:getProgress(ensure_networking, interactive)
                 return
             end
 
+            local doc_version = self:docVersion()
             if not body.percentage then
                 if interactive then
                     UIManager:show(InfoMessage:new{
                         text = _("No progress found for this document."),
                         timeout = 3,
                     })
+                    -- A book with a Drive version: this device is the first entry.
+                    if doc_version then self:pushNow() end
                 end
                 return
             end
@@ -975,6 +1001,23 @@ function KOSyncServerless:getProgress(ensure_networking, interactive)
 
             -- The progress needs to be updated.
             if interactive then
+                -- Progress saved on an older version of the file: its xpointer
+                -- may not exist here, so the newest timestamp wins, as a percentage.
+                local decision = Version.decide(doc_version, body.doc_version,
+                    body.timestamp, self.last_page_turn_timestamp)
+                logger.dbg("KOSyncServerless: [Pull] versions", doc_version, body.doc_version, decision)
+                if decision == "percent" then
+                    self.ui:handleEvent(Event:new("GotoPercent", body.percentage * 100))
+                    showSyncedMessage()
+                    return
+                elseif decision == "keep_local" then
+                    UIManager:show(InfoMessage:new{
+                        text = _("The other device read an older version of this book. Your progress here is newer, so it was pushed."),
+                        timeout = 3,
+                    })
+                    self:pushNow()
+                    return
+                end
                 -- If user actively pulls progress from other devices,
                 -- we always update the progress without further confirmation.
                 self:syncToProgress(body.progress)
@@ -1234,11 +1277,11 @@ function KOSyncServerless:_onNetworkDisconnecting()
 end
 
 function KOSyncServerless:onKOSyncServerlessPushProgress()
-    self:updateProgress(true, true)
+    self:manualSync(true)
 end
 
 function KOSyncServerless:onKOSyncServerlessPullProgress()
-    self:getProgress(true, true)
+    self:manualSync(false)
 end
 
 function KOSyncServerless:onKOSyncServerlessToggleAutoSync(toggle, from_menu)
