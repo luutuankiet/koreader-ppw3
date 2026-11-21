@@ -3,10 +3,10 @@
   "plugins": [
     {
       "name": "gdriveepub",
-      "version": "0.2.0",
-      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/gdriveepub-v0.2.0/gdriveepub-0.2.0.tar.gz",
-      "size": 21198,
-      "sha256": "03e9ec38cb4546a101a3de33abdb3a8f602c56791a87c599bf0c01e93abac4c3",
+      "version": "0.2.1",
+      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/gdriveepub-v0.2.1/gdriveepub-0.2.1.tar.gz",
+      "size": 21432,
+      "sha256": "26e081b4aeb97f551171979b9a07d2c9ef0524a839936fbfbf854026e7491515",
       "description": "Browse, search and download Google Docs (as EPUB), PDFs and EPUBs from your Google Drive through your own gdrive-epub server. Pair once by QR code.",
       "fullname": "Google Drive"
     },
@@ -21,10 +21,10 @@
     },
     {
       "name": "kosyncserverless",
-      "version": "0.3.0",
-      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/kosyncserverless-v0.3.0/kosyncserverless-0.3.0.tar.gz",
-      "size": 20702,
-      "sha256": "788fb24b9fdd9e17ad48a0e531e0a541d64f21d18baf3a38fb8d7c0a8598d4a6",
+      "version": "0.3.1",
+      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/kosyncserverless-v0.3.1/kosyncserverless-0.3.1.tar.gz",
+      "size": 20817,
+      "sha256": "5705b37646dd0917fde3f88dde09b791245a270c16f510074dcfc25173cd2e8a",
       "description": "Synchronizes your reading progress to a server across your KOReader devices. A copy of the built-in Progress sync plugin for servers that sleep when idle.",
       "fullname": "Progress sync serverless"
     },
@@ -48,10 +48,10 @@
     },
     {
       "name": "syncedhistory",
-      "version": "0.3.0",
-      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/syncedhistory-v0.3.0/syncedhistory-0.3.0.tar.gz",
-      "size": 23689,
-      "sha256": "585faeb8c943f52221d0b7c235ee4076787c833acc388a7166b41409fa9af69f",
+      "version": "0.4.0",
+      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/syncedhistory-v0.4.0/syncedhistory-0.4.0.tar.gz",
+      "size": 28359,
+      "sha256": "766d309583893728b0609aa3cb091976e29d80faeeede7288abbd6a7331a1e62",
       "description": "A reading list shared by every device logged into the same progress sync server. Opens the local copy of a book and pulls its latest position.",
       "fullname": "Synced reading list"
     }
