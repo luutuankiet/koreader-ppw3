@@ -285,6 +285,15 @@ test("remove: one DELETE per alias, then the cache forgets the book", function()
     check(#cached == 1 and cached[1].document == "solo", "cache still holds the removed book")
 end)
 
+test("bookKeys: file name key plus the content md5, no duplicates", function()
+    local client = newClient(GOOD)
+    local keys = client:bookKeys("/mnt/us/documents/GDrive/Doc.epub", "abc")
+    check(#keys == 2 and keys[1] == client:keyFor("Doc.epub") and keys[2] == "abc", "two keys")
+    check(#client:bookKeys("/x/Doc.epub", nil) == 1, "no content md5: one key")
+    local same = client:keyFor("Doc.epub")
+    check(#client:bookKeys("/x/Doc.epub", same) == 1, "same key twice")
+end)
+
 test("remove: a key already gone (deleted 0) still counts as removed", function()
     local client = newClient(GOOD, { status = 200, body = '{"deleted":0}' })
     local ok

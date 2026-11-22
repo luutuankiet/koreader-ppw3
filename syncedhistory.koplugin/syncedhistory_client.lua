@@ -90,6 +90,16 @@ function Client:keyFor(path_or_name)
     return self.md5(LocalIndex.basename(path_or_name))
 end
 
+-- Every key a book can sit under in the server list: md5 of its file name
+-- and, when known, its content md5 (the sidecar's partial_md5_checksum).
+function Client:bookKeys(path, content_md5)
+    local keys = { self:keyFor(path) }
+    if type(content_md5) == "string" and content_md5 ~= "" and content_md5 ~= keys[1] then
+        keys[2] = content_md5
+    end
+    return keys
+end
+
 --[[--
 Server and credentials from the built-in sync settings.
 

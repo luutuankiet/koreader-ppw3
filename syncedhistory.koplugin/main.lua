@@ -572,6 +572,23 @@ local function cleanupDrive(ui, list, info)
 end
 
 -- After a manual push or pull through the serverless progress sync.
+-- For other plugins (the progress sync, when a Drive doc is marked as read):
+-- remove the book at `path` from the server list under every key, so other
+-- devices clean up their copy. Online only, never turning WiFi on.
+-- done(ok, info) as Client:removeDocuments, or done(false, "offline").
+function SyncedHistory:removeBookFromList(path, done)
+    done = done or function() end
+    if not NetworkMgr:isOnline() then
+        logger.info("syncedhistory: offline, not removed from list:", path)
+        return done(false, "offline")
+    end
+    local DocSettings = require("docsettings")
+    local ds = DocSettings:open(path)
+    local keys = getClient():bookKeys(path, ds:readSetting("partial_md5_checksum"))
+    logger.info("syncedhistory: removing from list:", path, #keys, "keys")
+    getClient():removeDocuments(keys, done)
+end
+
 function SyncedHistory:onManualSyncDone()
     local ui = self.ui
     getClient():fetchList(function(list, info) cleanupDrive(ui, list, info) end)
