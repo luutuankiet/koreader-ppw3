@@ -42,12 +42,15 @@ json_encode, json_decode (required)
 settings     (required) LuaSettings-like: readSetting, saveSetting, flush
 scheduleIn   (required) function(seconds, f)
 flush        (optional) function() writing pending page times to the database
+kindOf       (optional) function(document) -> kind such as "gdrive", or nil for a book;
+             sent with each uploaded record so other devices can classify it
 log          (optional) logger
 ]]
 function Stats.new(opts)
     local self = setmetatable({}, Stats)
     for k, v in pairs(opts) do self[k] = v end
     self.flush = self.flush or noop
+    self.kindOf = self.kindOf or noop
     self.log = self.log or { info = noop, warn = noop, dbg = noop }
     return self
 end
@@ -90,6 +93,11 @@ local function decode(self, res)
 end
 
 local function num(v) return type(v) == "number" and v or tonumber(v) end
+
+-- The server rejects the whole batch (403) on a kind outside ^[a-z0-9_]{1,32}$.
+function Stats.validKind(k)
+    return type(k) == "string" and #k >= 1 and #k <= 32 and not k:find("[^a-z0-9_]") and k or nil
+end
 local function str(v) return type(v) == "string" and v or nil end
 
 -- A pulled record with the fields the database needs, or nil.
@@ -141,10 +149,17 @@ function Stats:sync(done)
             end
             return pull()
         end
-        local records = {}
+        local records, kind_cache = {}, {}
         for i, r in ipairs(rows) do
+            local kind = kind_cache[r.document]
+            if kind == nil then
+                local ok_k, k = pcall(self.kindOf, r.document)
+                kind = ok_k and Stats.validKind(k) or false
+                kind_cache[r.document] = kind
+            end
             records[i] = { document = r.document, title = r.title, authors = r.authors, page = r.page,
-                start_time = r.start_time, duration = r.duration, total_pages = r.total_pages }
+                start_time = r.start_time, duration = r.duration, total_pages = r.total_pages,
+                kind = kind or nil }
         end
         self.request({
             method = "PUT", url = creds.server .. "/stats/records", headers = headers(creds, true),
@@ -191,10 +206,13 @@ function Stats:sync(done)
                     if ok_after and after then m.upload = after end
                 end
             end
+            -- Keep whatever the server hands back, even below `since`: a
+            -- server whose database was reset starts its sequence again.
             local nxt = num(body.next)
-            if nxt and nxt > m.cursor then m.cursor = nxt end
+            local moved = nxt and nxt ~= m.cursor
+            if nxt then m.cursor = nxt end
             self:saveMarks(creds, m)
-            if body.more == true and nxt then self.scheduleIn(Stats.PAUSE, pull) else kinds() end
+            if body.more == true and moved then self.scheduleIn(Stats.PAUSE, pull) else kinds() end
         end)
     end
 

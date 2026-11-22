@@ -197,6 +197,10 @@ local function getStats()
                 local st = live_ui and live_ui.statistics
                 if st and st.insertDB then st:insertDB() end
             end,
+            kindOf = function(md5)
+                local kinds = getSettings():readSetting("stats_local_kinds")
+                return kinds and kinds[md5]
+            end,
             log = logger,
         }
     end
@@ -659,7 +663,9 @@ function SyncedHistory:addStrip(menu, state, items)
         text = StatsView.strip(state.summary, _),
         bold = true,
         callback = function()
+            -- The strip is about this week: show it, not a week paged to earlier.
             state.tab = Tabs.STATS
+            state.week_offset = 0
             self:redrawList(menu, state)
         end,
     })

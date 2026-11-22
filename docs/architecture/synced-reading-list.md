@@ -1,7 +1,7 @@
 ---
 title: Synced reading list plugin
-covers: where the synced reading list sets the progress sync device id from the Kindle serial, fetches the server list, maps books to local files under any of their merged file names, builds rows, filters and searches, refreshes, shows the long-press pop-up, removes a book from the list, chooses which progress sync plugin it works with, opens a book at its synced position, downloads a missing Google Drive book on tap, links local books to Drive in the background, fetches a newer Drive version before syncing, splits the list into New, Recent and Old tabs, deletes finished Drive downloads, and registers a gesture action
-verified: 2026-11-21
+covers: where the synced reading list sets the progress sync device id from the Kindle serial, fetches the server list, maps books to local files under any of their merged file names, builds rows, filters and searches, refreshes, shows the long-press pop-up, removes a book from the list, chooses which progress sync plugin it works with, opens a book at its synced position, downloads a missing Google Drive book on tap, links local books to Drive in the background, fetches a newer Drive version before syncing, splits the list into New, Recent, Old and Stats tabs, deletes finished Drive downloads, syncs reading time across devices into KOReader's statistics database, shows a daily reading goal, and registers a gesture action
+verified: 2026-11-22
 ---
 
 # Synced reading list
@@ -19,6 +19,10 @@ flowchart LR
     M --> G[syncedhistory_drive.lua<br/>Drive source, backfill, versions]
     M --> T[syncedhistory_tabs.lua<br/>tabs, row text, progress bar]
     M --> CL[syncedhistory_cleanup.lua<br/>which Drive files to delete]
+    M --> S[syncedhistory_stats.lua<br/>upload and pull page records]
+    S --> SD[syncedhistory_statsdb.lua<br/>statistics.sqlite3 reads and inserts]
+    M --> GO[syncedhistory_goals.lua<br/>day totals, goal, streaks]
+    M --> SV[syncedhistory_statsview.lua<br/>strip and Stats tab rows]
     M -->|ui.gdriveepub.api| GD[gdriveepub plugin<br/>find, info, download, deleteBook]
     K -->|onManualSyncDone| M
     M -->|KOSyncPullProgress or<br/>KOSyncServerlessPullProgress| K[chosen progress sync plugin]
@@ -79,7 +83,7 @@ Checked live on the KOReader emulator: a missing Drive book with a source on the
 
 ## Tabs
 
-The title-bar menu's first row switches between three tabs, each with its count; the subtitle starts with the tab name, but its book count is for the whole list.
+The title-bar menu's first row switches between four tabs (New, Recent, Old, Stats), each with its count; the subtitle starts with the tab name, but its book count is for the whole list.
 
 - **New**: the latest push came from another device after `list_last_seen`, the time the list was last closed on this device (saved in the plugin settings). Such a row is marked `●`. A New book also appears in Recent or Old.
 - **Recent**: pushed in the last 7 days.
@@ -105,9 +109,23 @@ The backfill runs right after the first fetch and works from the local index rea
 
 Checked live on the emulator on 2026-11-21: the first open removed four opened Drive docs no longer on the list, kept a never-opened download and the one book still listed, and the backfill then skipped the four gone files without crashing.
 
+## Reading goals and stats
+
+Reading time is KOReader's own statistics: the page records (`page_stat_data`) in `statistics.sqlite3`, not progress pushes. `syncedhistory_stats.lua` uploads this device's new rows with `PUT /stats/records` (at most 1000 per request; the server answers 413 code 2008 above that, and 403 code 2003 for the whole batch if one record is bad), then pulls other devices' rows with `GET /stats/records?since=<cursor>&exclude_device_id=<id>` until `more` is false and inserts them into the local database, so KOReader's own calendar and statistics show them too. Rows it inserted itself are stepped past by the upload mark and never go back up. Both marks (`stats_marks`, per server and user) live in the plugin settings. The cursor is set to whatever `next` the server returns, even below `since`: a server whose database was reset starts its sequence again.
+
+The sync runs only when the network is already up, never by turning Wi-Fi on: when the list opens, on Refresh, 3 s after a book opens (`onReaderReady`) and after a manual push or pull in "Progress sync serverless". The log line is `syncedhistory: stats sync done ... up N down M`.
+
+Each record can carry a `kind` (`^[a-z0-9_]{1,32}$`, else the server rejects the batch). A Drive doc is recorded in `stats_local_kinds` when it is opened with a `gdriveepub_source` sidecar, and its records go up with `kind = "gdrive"`; books send none. `GET /stats/kinds` returns the kind of every document any device sent one for (`stats_kinds`), which is how another device's Drive docs are classed. A Drive doc read before this existed and not opened since counts as a Book until it is opened again.
+
+The goal strip ("Today 12 / 60 min ... Week ...") is the first list row on page 1 of every tab; tapping it opens the Stats tab at this week. The Stats tab lists one week's days with prev and next week rows, the month total against the goal, days met and the best streak, time by kind, the top books of the month, and "Open calendar". When the goal is met a message shows once a day, on opening the list.
+
+Settings, under Tools: "Reading goals" (Daily goal, Week starts on, Count kinds toward goal, Show goal strip on list, Sync reading stats now) and "Open calendar", which broadcasts `ShowCalendarView` to the statistics plugin and works from the file browser. Keys: `stats_goal_min`, `stats_week_start`, `stats_counted`, `stats_show_strip`.
+
+Checked live on the emulator on 2026-11-22 against a test server: the first sync uploaded 42 local rows, a record pushed from a second device id with `kind = "gdrive"` showed up after Refresh in the strip, under "Drive docs" in the Stats tab, and in KOReader's calendar.
+
 ## Tests
 
-`test_localindex.lua`, `test_client.lua`, `test_listview.lua`, `test_deviceid.lua`, `test_backend.lua`, `test_drive.lua` and `test_cleanup.lua` (cleanup and tabs) sit next to the modules. Run each with `luajit <file>`, or on a device or the emulator with `--koreader` from the KOReader install folder, which uses the real md5 and lfs. `test_backend.lua` loads `main.lua` itself with KOReader modules faked; standalone, 11 of its tests fail on `module 'dispatcher' not found` (already so before the tabs and cleanup). In `--koreader` mode, `test_listview.lua` and `test_localindex.lua` read the chosen progress sync plugin's source (`SYNCEDHISTORY_BACKEND=auto|kosync|serverless`, default `auto`), looked for in `plugins/` and next to this plugin's folder. The plugin is checked on KOReader `v2024.11`, `v2025.04` and `v2026.07.1`. When you use a KOReader API, look it up in `v2024.11` first: that is the oldest version supported, and `main.lua` already works around `filemanagerutil.openFile` being missing there.
+`test_localindex.lua`, `test_client.lua`, `test_listview.lua`, `test_deviceid.lua`, `test_backend.lua`, `test_drive.lua`, `test_cleanup.lua` (cleanup and tabs), `test_stats.lua`, `test_statsdb.lua` (against a real SQLite file under KOReader's `luajit`), `test_goals.lua` and `test_statsview.lua` sit next to the modules. Run each with `luajit <file>`, or on a device or the emulator with `--koreader` from the KOReader install folder, which uses the real md5 and lfs. `test_backend.lua` loads `main.lua` itself with KOReader modules faked, including `dispatcher`; unknown KOReader modules load as stubs. In `--koreader` mode, `test_listview.lua` and `test_localindex.lua` read the chosen progress sync plugin's source (`SYNCEDHISTORY_BACKEND=auto|kosync|serverless`, default `auto`), looked for in `plugins/` and next to this plugin's folder. The plugin is checked on KOReader `v2024.11`, `v2025.04` and `v2026.07.1`. When you use a KOReader API, look it up in `v2024.11` first: that is the oldest version supported, and `main.lua` already works around `filemanagerutil.openFile` being missing there.
 
 ## Deliberate choices
 

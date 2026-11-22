@@ -181,6 +181,37 @@ test("server kinds are cached; a server without the route keeps the cache", func
     eq(s:remoteKinds().abc, "gdrive", "404 keeps the cache")
 end)
 
+test("uploaded records carry a valid kind for Drive docs and none for books", function()
+    local db = fakeDb(3)
+    db.rows[2].document = "g"; db.rows[3].document = "x"
+    local srv = fakeServer({})
+    local s = newSync(db, srv)
+    s.kindOf = function(md5) return ({ g = "gdrive", x = "Bad Kind!" })[md5] end
+    s:sync()
+    local recs = srv.puts[1].records
+    eq(recs[1].kind, nil, "book has no kind")
+    eq(recs[2].kind, "gdrive", "drive kind")
+    eq(recs[3].kind, nil, "invalid kind is not sent")
+    eq(Stats.validKind(string.rep("a", 33)), nil, "too long")
+end)
+
+test("a next below since (server reset) is stored and does not loop", function()
+    local settings = fakeSettings()
+    settings.t[Stats.MARKS] = { ["https://test|u"] = { upload = 0, cursor = 900 } }
+    local pulls = 0
+    local srv = { request = function(req, cb)
+        if req.url:match("/stats/kinds$") then return cb({ status = 404 }) end
+        pulls = pulls + 1
+        cb({ status = 200, body = encode{ records = {}, next = 3, more = pulls < 5 } })
+    end }
+    local s = newSync(fakeDb(0), srv, settings)
+    local ok
+    s:sync(function(o) ok = o end); s.drain()
+    eq(s:marks(CREDS).cursor, 3, "cursor follows the server down")
+    check(ok, "sync finished")
+    eq(pulls, 2, "stops when next does not move")
+end)
+
 test("bad pulled records are dropped", function()
     check(Stats.cleanRecord{ document = "d", page = 1, start_time = 2, duration = 3 }, "good")
     check(not Stats.cleanRecord{ document = "d", page = 1, start_time = 2 }, "no duration")
