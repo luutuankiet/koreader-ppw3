@@ -48,10 +48,10 @@
     },
     {
       "name": "syncedhistory",
-      "version": "0.4.0",
-      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/syncedhistory-v0.4.0/syncedhistory-0.4.0.tar.gz",
-      "size": 28359,
-      "sha256": "766d309583893728b0609aa3cb091976e29d80faeeede7288abbd6a7331a1e62",
+      "version": "0.5.0",
+      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/syncedhistory-v0.5.0/syncedhistory-0.5.0.tar.gz",
+      "size": 39950,
+      "sha256": "3fee6a93efd5a31983f6f0dcd0b703f86c2c703cf72b0a4d52d55ebda6bfd02e",
       "description": "A reading list shared by every device logged into the same progress sync server. Opens the local copy of a book and pulls its latest position.",
       "fullname": "Synced reading list"
     }
