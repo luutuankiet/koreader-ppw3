@@ -17,6 +17,7 @@ local md5 = require("ffi/sha2").md5
 local time = require("ui/time")
 local util = require("util")
 local CarryOver = require("kosyncserverless_carryover")
+local MarkRead = require("kosyncserverless_markread")
 local Retry = require("kosyncserverless_retry")
 local Sleep = require("kosyncserverless_sleep")
 local Version = require("kosyncserverless_version")
@@ -83,6 +84,9 @@ local coexistence_warned = false
 -- every sleep KOReader starts is UIManager.suspend itself. It is wrapped once
 -- per process and hands off to the plugin instance of the open book, if any.
 local sleep_owner = nil
+-- The plugin instance of the open book, if any (for "marked as read").
+local reader_owner = nil
+local removeDriveDoc -- defined near the end of the file
 local original_suspend = nil
 local function installSuspendHook()
     if original_suspend then return end
@@ -144,6 +148,7 @@ function KOSyncServerless:init()
     self.ui.menu:registerToMainMenu(self)
     installSuspendHook()
     sleep_owner = self
+    reader_owner = self
 end
 
 function KOSyncServerless:getSyncPeriod()
@@ -474,6 +479,15 @@ If set to 0, updating progress based on page turns will be disabled.]]),
                     self:manualSync(false)
                 end,
                 separator = true,
+            },
+            {
+                text = _("Push 100% when marked as read"),
+                checked_func = function() return MarkRead.enabled(self.settings) end,
+                help_text = _([[When a book is marked as read, in the reader or from the file browser, push its progress as 100% to the sync server (queued when offline; Wi-Fi is never turned on for it). A Google Drive doc is then removed from this device, unless it has highlights, notes or bookmarks.]]),
+                callback = function()
+                    self.settings.mark_read_push = not MarkRead.enabled(self.settings)
+                    self.updated = true
+                end,
             },
             {
                 text = _("Document matching method"),
@@ -848,7 +862,7 @@ function KOSyncServerless:pushNow(callback, opts)
         callback(false, { err = "not logged in" })
         return doneHandle()
     end
-    local item = self:currentProgressItem()
+    local item = opts.item or self:currentProgressItem()
     if not item.document then
         callback(false, { err = "no document" })
         return doneHandle()
@@ -1348,8 +1362,210 @@ end
 
 function KOSyncServerless:onCloseWidget()
     if sleep_owner == self then sleep_owner = nil end
+    if reader_owner == self then reader_owner = nil end
+    if self.drive_delete_on_close then
+        -- The reader is going away; delete once the file browser is back.
+        local path = self.drive_delete_on_close
+        self.drive_delete_on_close = nil
+        UIManager:scheduleIn(1, function()
+            -- Decide again from the sidecar the reader just saved: a
+            -- highlight made after marking read must keep the file.
+            local ds = require("docsettings"):open(path)
+            local action = MarkRead.driveAction(MarkRead.sidecar(function(key) return ds:readSetting(key) end), false)
+            if action == "delete" then
+                removeDriveDoc(path)
+            else
+                logger.info("KOSyncServerless: marked read, Drive doc kept on close", path, action)
+            end
+        end)
+    end
     UIManager:unschedule(self.periodic_push_task)
     self.periodic_push_task = nil
 end
+
+-- Marked as read ----------------------------------------------------------
+-- KOReader sends no event when a book's status changes. Every status change
+-- (end-of-book dialog and auto-mark, the book status screen, the file
+-- browser's and history's long-press "Finished" buttons, multi-select) goes
+-- through BookList.setBookInfoCacheProperty(file, "status", value), so that
+-- one function is wrapped, once per process. The wrapper always calls the
+-- original and never lets its own errors reach the caller.
+
+local function gdriveApi()
+    local ok, FileManager = pcall(require, "apps/filemanager/filemanager")
+    local ui = ok and FileManager and FileManager.instance
+    if not (ui and ui.gdriveepub) and reader_owner then ui = reader_owner.ui end
+    local plugin = ui and ui.gdriveepub
+    return plugin and plugin.api
+end
+
+removeDriveDoc = function(path)
+    local api = gdriveApi()
+    if not (api and api.deleteBook) then
+        logger.info("KOSyncServerless: marked read, Drive plugin not loaded, kept", path)
+        return
+    end
+    local ok, why = api.deleteBook(path)
+    logger.info("KOSyncServerless: marked read, remove Drive doc", path, "ok:", ok, "why:", why)
+    if ok then
+        local _dir, name = util.splitFilePathName(path)
+        UIManager:show(InfoMessage:new{
+            text = T(_("Removed finished Drive doc:\n%1"), name),
+            timeout = 3,
+        })
+    end
+end
+
+local function staticSettings()
+    if not KOSyncServerless.settings_obj then
+        KOSyncServerless.settings_obj = LuaSettings:open(KOSyncServerless.settings_file)
+    end
+    return KOSyncServerless.settings_obj:readSetting("settings", KOSyncServerless.default_settings)
+end
+
+local function newClientFor(settings)
+    local KOSyncServerlessClient = require("KOSyncServerlessClient")
+    return KOSyncServerlessClient:new{
+        custom_url = settings.custom_server,
+        username = settings.username,
+        userkey = settings.userkey,
+    }
+end
+
+local function afterPush(ok, path, sidecar, is_open, owner)
+    if not ok then return end
+    local list
+    local okfm, FileManager = pcall(require, "apps/filemanager/filemanager")
+    if owner then list = owner.ui and owner.ui.syncedhistory
+    elseif okfm and FileManager and FileManager.instance then list = FileManager.instance.syncedhistory end
+    local function syncDone()
+        if list and list.onManualSyncDone then pcall(list.onManualSyncDone, list) end
+    end
+    if MarkRead.removeFromList(sidecar) and list and list.removeBookFromList then
+        -- Off the list first, so the list fetched by onManualSyncDone no
+        -- longer holds it. Reading stats are never touched here.
+        local okr, err = pcall(list.removeBookFromList, list, path, function(removed, info)
+            logger.info("KOSyncServerless: marked read, removed from list", path, "ok:", removed,
+                "why:", type(info) == "table" and info.status or info)
+            syncDone()
+        end)
+        if not okr then
+            logger.warn("KOSyncServerless: marked read, list removal failed:", err)
+            syncDone()
+        end
+    else
+        syncDone()
+    end
+    local action = MarkRead.driveAction(sidecar, is_open)
+    logger.info("KOSyncServerless: marked read, Drive action", action, "for", path)
+    if action == "delete" then
+        removeDriveDoc(path)
+    elseif action == "after_close" and owner then
+        owner.drive_delete_on_close = path
+    end
+end
+
+-- Push or queue one item, never turning Wi-Fi on. done(ok).
+local function sendOrQueue(settings, item, done)
+    if NetworkMgr:isWifiOn() and NetworkMgr:isConnected() then
+        newClientFor(settings):push(item, function(ok, res)
+            logger.info("KOSyncServerless: marked read, pushed 100%", item.document, "ok:", ok, "status:", res and res.status)
+            if not ok and not (res and res.status == 401) then
+                require("KOSyncServerlessQueue"):push(item)
+            end
+            done(ok)
+        end)
+    else
+        logger.info("KOSyncServerless: marked read, offline, queued 100%; a Drive doc stays on the list", item.document)
+        require("KOSyncServerlessQueue"):push(item)
+        done(false)
+    end
+end
+
+-- The book is open in this reader: 100% of the current document, position
+-- untouched.
+function KOSyncServerless:pushMarkedRead()
+    local item = self:currentProgressItem()
+    if not item.document then return end
+    item.percentage = 1
+    local path = self.ui.document.file
+    local ds = self.ui.doc_settings
+    local live = self.ui.annotation and self.ui.annotation.annotations
+    local sidecar = MarkRead.sidecar(function(key) return ds:readSetting(key) end, live)
+    sendOrQueue(self.settings, item, function(ok)
+        if ok then
+            self.push_timestamp = UIManager:getElapsedTimeSinceBoot()
+            UIManager:show(Notification:new{ text = _("Progress pushed: 100%") })
+        end
+        afterPush(ok, path, sidecar, true, self)
+    end)
+end
+
+-- A closed book, from the file browser or history: the key is computed the
+-- way the reader computes it, from the sidecar.
+local function pushClosedMarkedRead(path, settings)
+    local DocSettings = require("docsettings")
+    local ds = DocSettings:open(path)
+    local use_filename = settings.checksum_method == CHECKSUM_METHOD.FILENAME
+    local digest = MarkRead.digest(path, use_filename, ds:readSetting("partial_md5_checksum"),
+        md5, util.partialMD5)
+    local position = MarkRead.position(ds:readSetting("last_xpointer"), ds:readSetting("last_page"))
+    if not digest or not position then
+        logger.info("KOSyncServerless: marked read, nothing to push (never opened)", path)
+        return
+    end
+    local item = MarkRead.item{
+        document = digest,
+        progress = position,
+        device = settings.kosync_hostname or Device.model,
+        device_id = G_reader_settings:readSetting("device_id"),
+        doc_version = Version.fromRecord(ds:readSetting("gdriveepub_source")),
+    }
+    local sidecar = MarkRead.sidecar(function(key) return ds:readSetting(key) end)
+    sendOrQueue(settings, item, function(ok)
+        if ok then UIManager:show(Notification:new{ text = _("Progress pushed: 100%") }) end
+        afterPush(ok, path, sidecar, false, nil)
+    end)
+end
+
+local function onMarkedRead(path)
+    local owner = reader_owner
+    local open_here = owner and owner.ui and owner.ui.document and owner.ui.document.file == path
+    local settings = open_here and owner.settings or staticSettings()
+    if not MarkRead.enabled(settings) or not settings.username or not settings.userkey then return end
+    logger.info("KOSyncServerless: marked read", path, open_here and "(open)" or "(closed)")
+    if open_here then owner:pushMarkedRead() else pushClosedMarkedRead(path, settings) end
+end
+
+local function installStatusHook()
+    local ok, BookList = pcall(require, "ui/widget/booklist")
+    if not ok or type(BookList) ~= "table" or type(BookList.setBookInfoCacheProperty) ~= "function"
+            or BookList._kosyncserverless_wrapped then
+        if not ok or not BookList or not BookList._kosyncserverless_wrapped then
+            logger.warn("KOSyncServerless: BookList.setBookInfoCacheProperty not found; no push on marked as read")
+        end
+        return
+    end
+    local original = BookList.setBookInfoCacheProperty
+    BookList._kosyncserverless_wrapped = true
+    BookList.setBookInfoCacheProperty = function(file, prop_name, prop_value, ...)
+        local prev
+        if prop_name == "status" then
+            local cache = BookList.book_info_cache
+            local entry = type(cache) == "table" and cache[file]
+            prev = type(entry) == "table" and entry.status or nil
+        end
+        local results = { original(file, prop_name, prop_value, ...) }
+        if prop_name == "status" and MarkRead.isTransition(prev, prop_value) then
+            -- Next tick: the caller saves the sidecar after this call.
+            UIManager:nextTick(function()
+                local okc, err = pcall(onMarkedRead, file)
+                if not okc then logger.warn("KOSyncServerless: marked read failed:", err) end
+            end)
+        end
+        return unpack(results)
+    end
+end
+installStatusHook()
 
 return KOSyncServerless

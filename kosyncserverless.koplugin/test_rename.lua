@@ -165,7 +165,8 @@ for _, ev in ipairs{ "KOSyncServerlessPushProgress", "KOSyncServerlessPullProgre
     has("handler on" .. ev, "function KOSyncServerless:on" .. ev .. "(")
 end
 has("_meta name", 'name = "kosyncserverless",', "_meta.lua")
-has("_meta version 0.2.1", 'version = "0.2.1",', "_meta.lua")
+-- Shape only: pinning the number broke this test on every release bump.
+check("_meta version is x.y.z", (src["_meta.lua"] or ""):match('version = "%d+%.%d+%.%d+",') ~= nil)
 has("coexistence check on ui.kosync", "not self.ui.kosync")
 
 -- 2. Login carry-over.
