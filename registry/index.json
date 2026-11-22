@@ -21,10 +21,10 @@
     },
     {
       "name": "kosyncserverless",
-      "version": "0.3.1",
-      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/kosyncserverless-v0.3.1/kosyncserverless-0.3.1.tar.gz",
-      "size": 20817,
-      "sha256": "5705b37646dd0917fde3f88dde09b791245a270c16f510074dcfc25173cd2e8a",
+      "version": "0.4.0",
+      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/kosyncserverless-v0.4.0/kosyncserverless-0.4.0.tar.gz",
+      "size": 24264,
+      "sha256": "7d6fe22b6e68ac51b811764250df1196a3f377923362e6437a90c654ea2feb24",
       "description": "Synchronizes your reading progress to a server across your KOReader devices. A copy of the built-in Progress sync plugin for servers that sleep when idle.",
       "fullname": "Progress sync serverless"
     },
@@ -48,10 +48,10 @@
     },
     {
       "name": "syncedhistory",
-      "version": "0.5.0",
-      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/syncedhistory-v0.5.0/syncedhistory-0.5.0.tar.gz",
-      "size": 39950,
-      "sha256": "3fee6a93efd5a31983f6f0dcd0b703f86c2c703cf72b0a4d52d55ebda6bfd02e",
+      "version": "0.5.1",
+      "url": "https://github.com/luutuankiet/koreader-ppw3/releases/download/syncedhistory-v0.5.1/syncedhistory-0.5.1.tar.gz",
+      "size": 40256,
+      "sha256": "afd820d501ff8b9e8622ae1198148a03a26366b5a573889c2894b850a02ccd68",
       "description": "A reading list shared by every device logged into the same progress sync server. Opens the local copy of a book and pulls its latest position.",
       "fullname": "Synced reading list"
     }
