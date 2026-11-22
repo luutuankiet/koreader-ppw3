@@ -132,7 +132,15 @@ function Stats:sync(done)
     local function upload()
         local ok, rows = pcall(self.db.readSince, self.db, m.upload, Stats.BATCH)
         if not ok then return finish(false, "db: " .. tostring(rows)) end
-        if #rows == 0 then return pull() end
+        if #rows == 0 then
+            -- Nothing uploadable in this window: step the mark past it.
+            if rows.last and rows.last > m.upload then
+                m.upload = rows.last
+                self:saveMarks(creds, m)
+                if rows.full then return self.scheduleIn(Stats.PAUSE, upload) end
+            end
+            return pull()
+        end
         local records = {}
         for i, r in ipairs(rows) do
             records[i] = { document = r.document, title = r.title, authors = r.authors, page = r.page,
@@ -148,9 +156,9 @@ function Stats:sync(done)
                 return finish(false, "upload " .. tostring(res and (res.status or res.err)))
             end
             info.uploaded = info.uploaded + #rows
-            m.upload = rows[#rows].rowid
+            m.upload = math.max(rows.last or 0, rows[#rows].rowid)
             self:saveMarks(creds, m)
-            if #rows >= Stats.BATCH then self.scheduleIn(Stats.PAUSE, upload) else pull() end
+            if rows.full or #rows >= Stats.BATCH then self.scheduleIn(Stats.PAUSE, upload) else pull() end
         end)
     end
 

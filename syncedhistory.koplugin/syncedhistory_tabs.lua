@@ -16,7 +16,10 @@ Tabs.NEW = "new"
 Tabs.RECENT = "recent"
 Tabs.OLD = "old"
 Tabs.ORDER = { Tabs.NEW, Tabs.RECENT, Tabs.OLD }
-Tabs.TITLES = { new = "New", recent = "Recent", old = "Old" }
+Tabs.STATS = "stats"
+-- The tab buttons: the three book tabs, then reading time.
+Tabs.ALL = { Tabs.NEW, Tabs.RECENT, Tabs.OLD, Tabs.STATS }
+Tabs.TITLES = { new = "New", recent = "Recent", old = "Old", stats = "Stats" }
 
 Tabs.WEEK = 7 * 24 * 3600
 Tabs.FINISHED = 0.99

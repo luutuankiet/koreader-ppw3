@@ -49,26 +49,27 @@ function StatsDb:maxRowid()
     end)
 end
 
--- Up to `limit` page records with rowid > mark, oldest rowid first.
+-- Up to `limit` page records with rowid > mark, oldest rowid first. Rows of
+-- books without an md5, or with no duration, are scanned but not returned;
+-- `out.last` is the last rowid scanned (so the mark can pass skipped rows)
+-- and `out.full` is true when the scan hit `limit` (more may follow).
 function StatsDb:readSince(mark, limit)
+    limit = limit or 1000
     return withConn(self, function(conn)
         local out = {}
-        for i, r in ipairs(rows(conn, [[
+        local scanned = rows(conn, [[
             SELECT p.rowid, b.md5, b.title, b.authors, p.page, p.start_time, p.duration, p.total_pages
-            FROM page_stat_data p JOIN book b ON b.id = p.id_book
-            WHERE p.rowid > ? AND b.md5 IS NOT NULL AND p.duration > 0
-            ORDER BY p.rowid LIMIT ?]], mark or 0, limit or 1000)) do
-            out[i] = { rowid = n(r[1]), document = r[2], title = r[3] or "", authors = r[4] or "",
-                page = n(r[5]), start_time = n(r[6]), duration = n(r[7]), total_pages = n(r[8]) or 0 }
+            FROM page_stat_data p LEFT JOIN book b ON b.id = p.id_book
+            WHERE p.rowid > ? ORDER BY p.rowid LIMIT ?]], mark or 0, limit)
+        for _i, r in ipairs(scanned) do
+            local duration = n(r[7]) or 0
+            if r[2] and r[2] ~= "" and duration > 0 then
+                out[#out + 1] = { rowid = n(r[1]), document = r[2], title = r[3] or "", authors = r[4] or "",
+                    page = n(r[5]), start_time = n(r[6]), duration = duration, total_pages = n(r[8]) or 0 }
+            end
         end
-        -- Rows of books without an md5 are skipped above, but the mark must
-        -- still pass them, so report the last rowid scanned.
-        if #out < (limit or 1000) then
-            local last = rows(conn, [[SELECT MAX(rowid) FROM (SELECT rowid FROM page_stat_data
-                WHERE rowid > ? ORDER BY rowid LIMIT ?)]], mark or 0, limit or 1000)
-            local top = last[1] and n(last[1][1])
-            if top and #out > 0 and top > out[#out].rowid then out[#out].rowid = top end
-        end
+        if #scanned > 0 then out.last = n(scanned[#scanned][1]) end
+        out.full = #scanned >= limit
         return out
     end)
 end

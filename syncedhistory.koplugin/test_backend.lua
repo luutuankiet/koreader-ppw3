@@ -174,6 +174,7 @@ local function loadMain(world)
         ["ui/widget/buttondialog"] = widget,
         ["ui/widget/confirmbox"] = widget,
         ["datastorage"] = { getSettingsDir = function() return "/settings" end },
+        ["dispatcher"] = { registerAction = function() end },
         ["document/documentregistry"] = {},
         ["ui/event"] = { new = function(_, name) return { name = name } end },
         ["ui/widget/infomessage"] = widget,
@@ -206,6 +207,16 @@ local function loadMain(world)
         ["ffi/util"] = {},
     }
     for name, fake in pairs(fakes) do package.loaded[name] = fake end
+    -- Any other KOReader module main.lua requires: a stub whose every field
+    -- is a no-op function, so a new require does not break these tests.
+    if not package.syncedhistory_stub_loader then
+        package.syncedhistory_stub_loader = true
+        table.insert(package.loaders, function()
+            return function()
+                return setmetatable({}, { __index = function() return function() end end })
+            end
+        end)
+    end
     for _, name in ipairs(OWN) do package.loaded[name] = nil end
     G_reader_settings = fakeSettings({ kosync = world.legacy })
 

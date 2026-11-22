@@ -37,6 +37,10 @@ local Http = require("syncedhistory_http")
 local Drive = require("syncedhistory_drive")
 local ListView = require("syncedhistory_listview")
 local LocalIndex = require("syncedhistory_localindex")
+local Goals = require("syncedhistory_goals")
+local Stats = require("syncedhistory_stats")
+local StatsDb = require("syncedhistory_statsdb")
+local StatsView = require("syncedhistory_statsview")
 
 -- Give the progress sync a device id derived from this Kindle's serial, so a
 -- restored settings file can't make two Kindles share one. This runs when the
@@ -165,6 +169,81 @@ local function getClient()
     return client
 end
 
+-- Cross-device reading time (syncedhistory_stats.lua), over KOReader's own
+-- statistics database. Synced only at the list's network moments, never by
+-- turning Wi-Fi on and never per page turn.
+local stats
+local function getStats()
+    if not stats then
+        local SQ3 = require("lua-ljsqlite3/init")
+        local path = DataStorage:getSettingsDir() .. "/statistics.sqlite3"
+        stats = Stats.new{
+            db = StatsDb.new{ open = function() return SQ3.open(path) end },
+            request = Http.new{
+                scheduleIn = function(s, f) UIManager:scheduleIn(s, f) end,
+                log = logger,
+            },
+            credentials = function() return (getClient():credentials()) end,
+            device = function()
+                local Device = require("device")
+                return G_reader_settings:readSetting("device_name") or Device.model,
+                    G_reader_settings:readSetting("device_id")
+            end,
+            json_encode = json.encode,
+            json_decode = json.decode,
+            settings = getSettings(),
+            scheduleIn = function(s, f) UIManager:scheduleIn(s, f) end,
+            flush = function()
+                local st = live_ui and live_ui.statistics
+                if st and st.insertDB then st:insertDB() end
+            end,
+            log = logger,
+        }
+    end
+    return stats
+end
+
+-- Sync reading time, only when the network is already up.
+local function syncStats(done)
+    if not NetworkMgr:isOnline() then
+        if done then done(false, { reason = "offline" }) end
+        return
+    end
+    local ok, err = pcall(function() getStats():sync(done) end)
+    if not ok then
+        logger.warn("syncedhistory: stats sync failed:", err)
+        if done then done(false, { reason = tostring(err) }) end
+    end
+end
+
+local GOAL, WEEK_START, COUNTED, SHOW_STRIP = "stats_goal_min", "stats_week_start", "stats_counted", "stats_show_strip"
+local LOCAL_KINDS, GOAL_MET_SHOWN = "stats_local_kinds", "goal_met_shown"
+
+local function goalMin() return Goals.clampGoal(getSettings():readSetting(GOAL) or Goals.DEFAULT_GOAL) end
+local function weekStart() return getSettings():readSetting(WEEK_START) or Goals.MONDAY end
+local function stripShown() return getSettings():readSetting(SHOW_STRIP) ~= false end
+
+-- Day totals of the last 400 days from the local statistics database, which
+-- holds other devices' time once synced. Read on screen open, not per redraw.
+local function loadDays()
+    local ok, rows = pcall(function() return getStats().db:readFrom(os.time() - 400 * 86400) end)
+    if not ok then
+        logger.warn("syncedhistory: reading stats failed:", rows)
+        return nil
+    end
+    local recs = StatsView.records(rows, getSettings():readSetting(LOCAL_KINDS), getStats():remoteKinds())
+    return Goals.addRecords({}, recs)
+end
+
+local function goalSummary(days, week_offset)
+    return Goals.summary{ days = days or {}, now = os.time(), goal_min = goalMin(), week_start = weekStart(),
+        counted = getSettings():readSetting(COUNTED), week_offset = week_offset or 0 }
+end
+
+local function openCalendar()
+    UIManager:broadcastEvent(Event:new("ShowCalendarView"))
+end
+
 local SyncedHistory = WidgetContainer:extend{
     name = "syncedhistory",
     is_doc_only = false,
@@ -172,6 +251,7 @@ local SyncedHistory = WidgetContainer:extend{
 
 -- For later changes and for the on-device checks.
 SyncedHistory.getIndex = getIndex
+SyncedHistory.getStats = function() return getStats() end
 SyncedHistory.getClient = getClient
 SyncedHistory.getBackend = getBackend
 
@@ -247,6 +327,17 @@ function SyncedHistory:onReaderReady()
     live_ui = self.ui
     local file = self.ui.document and self.ui.document.file
     if file then pushDocument(self.ui, file) end
+    local ds = self.ui.doc_settings
+    local md5sum = ds and ds:readSetting("partial_md5_checksum")
+    if md5sum and ds:readSetting("gdriveepub_source") then
+        local kinds = getSettings():readSetting(LOCAL_KINDS) or {}
+        if kinds[md5sum] ~= "gdrive" then
+            kinds[md5sum] = "gdrive"
+            getSettings():saveSetting(LOCAL_KINDS, kinds)
+            getSettings():flush()
+        end
+    end
+    UIManager:scheduleIn(3, function() syncStats() end)
     local pull = file ~= nil and file == pending_pull
     pending_pull = nil
     local at = pending_percent and file == pending_percent.path and pending_percent
@@ -480,6 +571,7 @@ end
 function SyncedHistory:onManualSyncDone()
     local ui = self.ui
     getClient():fetchList(function(list, info) cleanupDrive(ui, list, info) end)
+    syncStats()
 end
 
 -- A book's title from its sidecar, read once per path per run.
@@ -534,6 +626,7 @@ function SyncedHistory:redrawList(menu, state)
         last_seen = state.last_seen,
     })
     state.counts = { new = #tabs.new, recent = #tabs.recent, old = #tabs.old }
+    if state.tab == Tabs.STATS then return self:redrawStats(menu, state) end
     local items = {}
     for i, row in ipairs(tabs[state.tab]) do
         row.text, row.mandatory = Tabs.rowText(row, {
@@ -552,10 +645,80 @@ function SyncedHistory:redrawList(menu, state)
     if empty then
         items[1] = { text = empty, select_enabled = false, dim = true }
     end
+    self:addStrip(menu, state, items)
     local subtitle = _(Tabs.TITLES[state.tab]) .. " · "
         .. ListView.subtitle(view, { status = state.status, gettext = _ })
     -- itemnumber nil: switchItemTable goes back to page 1.
     menu:switchItemTable(nil, items, nil, nil, subtitle)
+end
+
+-- The goal strip, first row of every tab; a tap opens the Stats tab.
+function SyncedHistory:addStrip(menu, state, items)
+    if not stripShown() or not state.summary then return end
+    table.insert(items, 1, {
+        text = StatsView.strip(state.summary, _),
+        bold = true,
+        callback = function()
+            state.tab = Tabs.STATS
+            self:redrawList(menu, state)
+        end,
+    })
+end
+
+function SyncedHistory:redrawStats(menu, state)
+    local items = {}
+    if not state.days then
+        items[1] = { text = _("Reading statistics are not available."), select_enabled = false, dim = true }
+    else
+        local s = goalSummary(state.days, state.week_offset)
+        for i, r in ipairs(StatsView.rows(s, { gettext = _, week_offset = state.week_offset })) do
+            local item = { text = r.text, dim = r.dim }
+            if r.action == "prev" or r.action == "next" then
+                item.callback = function()
+                    state.week_offset = (state.week_offset or 0) + (r.action == "prev" and -1 or 1)
+                    self:redrawList(menu, state)
+                end
+            elseif r.action == "calendar" then
+                item.callback = function() openCalendar(self.ui) end
+            else
+                item.select_enabled = false
+            end
+            items[i] = item
+        end
+    end
+    self:addStrip(menu, state, items)
+    local subtitle = _(Tabs.TITLES[Tabs.STATS]) .. " · " .. (state.stats_status or "")
+    menu:switchItemTable(nil, items, nil, nil, subtitle)
+end
+
+-- Goal numbers from the local database, then the goal-met message, once a
+-- day and only when the list opens.
+function SyncedHistory:loadGoals(state)
+    state.days = loadDays()
+    state.summary = state.days and goalSummary(state.days) or nil
+    local s = state.summary
+    local today = Goals.dayKey(os.time())
+    if s and s.met_today and state.opening and getSettings():readSetting(GOAL_MET_SHOWN) ~= today then
+        getSettings():saveSetting(GOAL_MET_SHOWN, today)
+        getSettings():flush()
+        UIManager:show(InfoMessage:new{ text = StatsView.goalMetText(s, _), timeout = 4 })
+    end
+end
+
+-- Sync reading time with the list's own fetch, then recompute the numbers.
+function SyncedHistory:syncStatsIntoList(menu, state)
+    state.stats_status = _(ListView.SYNCING)
+    syncStats(function(ok, info)
+        state.stats_status = ok and _(ListView.SYNCED)
+            or (info and info.reason == "offline" and _("offline") or _("not synced"))
+        if not UIManager:isWidgetShown(menu) then return end
+        if ok and ((info.pulled or 0) > 0 or (info.uploaded or 0) > 0) or state.tab == Tabs.STATS then
+            self:loadGoals(state)
+            state.opening = nil
+            self:redrawList(menu, state)
+        end
+        state.opening = nil
+    end)
 end
 
 -- Fetch the server list into the open list screen. The cached copy is shown
@@ -563,6 +726,7 @@ end
 function SyncedHistory:fetchIntoList(menu, state)
     state.status = _(ListView.SYNCING)
     self:redrawList(menu, state)
+    self:syncStatsIntoList(menu, state)
     getClient():fetchList(function(list, info)
         if not UIManager:isWidgetShown(menu) then return end
         if info.fresh then
@@ -630,7 +794,7 @@ end
 function SyncedHistory:showListMenu(menu, state)
     local dialog
     local tab_row = {}
-    for i, tab in ipairs(Tabs.ORDER) do
+    for i, tab in ipairs(Tabs.ALL) do
         local n = state.counts and state.counts[tab]
         tab_row[i] = {
             text = (state.tab == tab and "✓ " or "") .. _(Tabs.TITLES[tab])
@@ -756,6 +920,7 @@ function SyncedHistory:showList()
         -- this opening keeps comparing against the old time.
         last_seen = getSettings():readSetting(LAST_SEEN),
         cleanup = true,
+        opening = true,
     }
     local menu = Menu:new{
         name = "syncedhistory_list",
@@ -787,6 +952,7 @@ function SyncedHistory:showList()
         self:showDetails(menu, state, item)
         return true
     end
+    self:loadGoals(state)
     self:redrawList(menu, state)
     UIManager:show(menu)
     self:fetchIntoList(menu, state)
@@ -853,6 +1019,90 @@ function SyncedHistory:backendMenu()
     }
 end
 
+-- "Reading goals": the daily goal, the week's first day, which kinds count,
+-- the strip on the list, and a sync on demand (only when already online).
+function SyncedHistory:goalsMenu()
+    local function save(k, v)
+        getSettings():saveSetting(k, v)
+        getSettings():flush()
+    end
+    local kinds = {}
+    for i, kind in ipairs(Goals.KINDS) do
+        kinds[i] = {
+            text = _(Goals.KIND_TITLES[kind]),
+            checked_func = function()
+                local c = getSettings():readSetting(COUNTED)
+                return not (c and c[kind] == false)
+            end,
+            callback = function()
+                local c = getSettings():readSetting(COUNTED) or {}
+                if c[kind] == false then c[kind] = nil else c[kind] = false end
+                save(COUNTED, c)
+            end,
+        }
+    end
+    return {
+        text = _("Reading goals"),
+        sub_item_table = {
+            {
+                text_func = function() return string.format(_("Daily goal: %d min"), goalMin()) end,
+                keep_menu_open = true,
+                callback = function(touchmenu_instance)
+                    local SpinWidget = require("ui/widget/spinwidget")
+                    UIManager:show(SpinWidget:new{
+                        title_text = _("Daily reading goal"),
+                        value = goalMin(),
+                        value_min = Goals.MIN_GOAL,
+                        value_max = Goals.MAX_GOAL,
+                        value_step = Goals.GOAL_STEP,
+                        value_hold_step = 30,
+                        default_value = Goals.DEFAULT_GOAL,
+                        unit = _("min"),
+                        callback = function(spin)
+                            save(GOAL, Goals.clampGoal(spin.value))
+                            if touchmenu_instance then touchmenu_instance:updateItems() end
+                        end,
+                    })
+                end,
+            },
+            {
+                text_func = function()
+                    return _("Week starts on") .. ": " .. (weekStart() == Goals.SUNDAY and _("Sunday") or _("Monday"))
+                end,
+                sub_item_table = {
+                    { text = _("Monday"), radio = true,
+                        checked_func = function() return weekStart() == Goals.MONDAY end,
+                        callback = function() save(WEEK_START, Goals.MONDAY) end },
+                    { text = _("Sunday"), radio = true,
+                        checked_func = function() return weekStart() == Goals.SUNDAY end,
+                        callback = function() save(WEEK_START, Goals.SUNDAY) end },
+                },
+            },
+            { text = _("Count kinds toward goal"), sub_item_table = kinds },
+            {
+                text = _("Show goal strip on list"),
+                checked_func = stripShown,
+                callback = function() save(SHOW_STRIP, not stripShown()) end,
+            },
+            {
+                text = _("Sync reading stats now"),
+                keep_menu_open = true,
+                callback = function()
+                    if not NetworkMgr:isOnline() then
+                        return showText("Not online. Turn Wi-Fi on, then try again.")
+                    end
+                    syncStats(function(ok, info)
+                        UIManager:show(InfoMessage:new{ timeout = 3, text = ok
+                            and string.format(_("Reading stats synced: %d sent, %d received."),
+                                info.uploaded or 0, info.pulled or 0)
+                            or (_("Reading stats not synced: ") .. tostring(info and (info.reason or info.status))) })
+                    end)
+                end,
+            },
+        },
+    }
+end
+
 function SyncedHistory:addToMainMenu(menu_items)
     menu_items.synced_reading_list = {
         text = _(ListView.TITLE),
@@ -861,6 +1111,13 @@ function SyncedHistory:addToMainMenu(menu_items)
     }
     menu_items.synced_reading_list_backend = self:backendMenu()
     menu_items.synced_reading_list_backend.sorting_hint = "tools"
+    menu_items.synced_reading_goals = self:goalsMenu()
+    menu_items.synced_reading_goals.sorting_hint = "tools"
+    menu_items.synced_reading_calendar = {
+        text = _("Open calendar"),
+        sorting_hint = "tools",
+        callback = function() openCalendar(self.ui) end,
+    }
 end
 
 return SyncedHistory
