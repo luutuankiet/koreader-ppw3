@@ -23,6 +23,7 @@ Workspace for developing KOReader plugins for Kindle Paperwhite 3 devices, plus 
 - `emulator/` - KOReader `v2026.07.1` in Docker, permanently connected to the gateway as device `emu` (`emulator/README.md`); its `state/` and `library/` are gitignored
 - `scripts/` - shell deploy fallbacks, `publish.sh` (plugin packages: `--github` publishes a GitHub Release and its entry in `registry/index.json`, otherwise the LAN gateway's `/pkg/`) and the docs index generator
 - `registry/index.json` - the plugin manifest the on-device installer reads from `main` by default
+- `koreader-patches/` - KOReader user patches, copied by hand into a device's `koreader/patches/` folder and applied on restart (`1-force-ipv4.lua` forces IPv4 sockets for networks whose IPv6 is broken)
 - `kosettings_backup/` - gitignored device settings backup
 
 ## Build and check
